@@ -42,8 +42,7 @@ const MESSAGES = {
     '• Blood Sugar & Cholesterol\n' +
     '• Kidney & Liver Functions\n' +
     '• Vitamin D & Vitamin B12\n' +
-    '• Complete Blood Count (CBC)\n\n' +
-    "To schedule your booking, reply 'BOOK' to connect with our front desk, or type '0' to return to the main menu.",
+     "To schedule your booking, reply 'BOOK' to connect with our front desk, or type '0' to return to the main menu.",
 
   MEDICAL_LAB_IV:
     '💧 IV DRIPS TIER MENU 💧\n' +
