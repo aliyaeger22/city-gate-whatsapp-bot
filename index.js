@@ -13,9 +13,10 @@
  */
 
 const express = require('express');
+
 const twilio = require('twilio');
 
-const { MessagingResponse } = twilio;
+const MessagingResponse = twilio.twiml.MessagingResponse;
 
 const app = express();
 
