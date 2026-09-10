@@ -1,249 +1,223 @@
 /**
- * City Gate Medical Center - WhatsApp Chatbot Webhook
- * -----------------------------------------------------
- * A production-ready Express.js server that handles incoming WhatsApp
- * messages via the Twilio WhatsApp API and routes them using simple,
- * case-insensitive keyword matching.
- *
- * Requirements:
- *   npm install express twilio
+ * City Gate Medical Center — Twilio WhatsApp Chatbot
+ * ---------------------------------------------------
+ * A stateless, menu-driven WhatsApp bot built with Express and Twilio's
+ * MessagingResponse (TwiML). Deployable on Render (or any Node host).
  *
  * Run:
- *   node index.js
+ *   npm install express twilio
+ *   node app.js
  *
- * Environment variables (optional but recommended for production):
- *   PORT                        - Port to listen on (default: 3000)
- *   TWILIO_AUTH_TOKEN           - Used to validate that incoming requests
- *                                  genuinely come from Twilio (recommended
- *                                  for production; see validateTwilioRequest below)
- *   VALIDATE_TWILIO_SIGNATURE   - Set to "true" to enforce signature validation
+ * Env:
+ *   PORT  (optional) - defaults to 10000, falls back for Render compatibility
  */
-
-'use strict';
 
 const express = require('express');
 const twilio = require('twilio');
 
-const { MessagingResponse } = twilio.twiml;
+const { MessagingResponse } = twilio;
 
 const app = express();
 
-// Twilio sends incoming webhook data as application/x-www-form-urlencoded
+// Twilio sends webhook payloads as application/x-www-form-urlencoded
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
-const VALIDATE_TWILIO_SIGNATURE = process.env.VALIDATE_TWILIO_SIGNATURE === 'true';
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
+const CLINIC_NAME = 'City Gate Medical Center';
+const CLINIC_PHONE = '+971 55 948 4795';
+const MAPS_LINK = 'https://maps.app.goo.gl/CityGateMedicalCenterMuwaileh';
 
 // ---------------------------------------------------------------------------
-// Message Templates
+// Message templates
 // ---------------------------------------------------------------------------
 
 const MESSAGES = {
-  WELCOME:
-    'Welcome to City Gate Medical Center, Sharjah! 🏥 We are happy to assist you today. ' +
-    'Please reply with the number or keyword of what you are looking for:\n\n' +
-    '1️⃣ Mega Dental Offers\n' +
-    '2️⃣ Medical & Lab Packages\n' +
-    '3️⃣ Clinic Location & Timings',
+  mainMenu: `Welcome to *${CLINIC_NAME}*! 🩺
 
-  DENTAL:
-    '🦷 City Gate Mega Dental Offers:\n' +
-    'Here are our current special rates:\n\n' +
-    '• Scaling & Polishing: 75 AED\n' +
-    '• Filling: 99 AED\n' +
-    '• Normal Extraction: 99 AED\n' +
-    '• Surgical Extraction: 250 AED\n' +
-    '• Crown & Bridge: 250 AED\n' +
-    '• Root Canal: 400 AED\n' +
-    '• Wisdom Tooth Extraction: 500 AED\n\n' +
-    "Would you like to schedule an appointment? Reply 'BOOK' to speak with reception, or type '0' to return to the main menu.",
+How can we help you today? Please reply with a number:
+*1* ── Complete Health Package (50 AED)
+*2* ── Medical, Lab & IV Drip Packages ⭐
+*3* ── Dental Scaling & Polishing (75 AED)
+*4* ── Clinic Location & Timings
+*5* ── Speak to Reception`,
 
-  MEDICAL_LAB:
-    '🔬 City Gate Medical & Lab Packages:\n' +
-    'Here are our current health screenings:\n\n' +
-    '• Vitamin D Test Special: 12 AED\n' +
-    '• Basic Wellness Screening: 25 AED\n' +
-    '• Silver Full-Body Package (50+ Tests): 49 AED\n' +
-    '• Golden Hormone & Full-Body Package: 99 AED\n\n' +
-    "Would you like to book a package? Reply 'BOOK' to speak with reception, or type '0' to return to the main menu.",
+  option1HealthPackage: `🩺 *Complete Health Package — 50 AED*
 
-  LOCATION:
-    '📍 City Gate Medical Center Location:\n' +
-    'Building 575, Muwaileh Commercial, Sharjah (Behind Sheikh Mohammed Bin Zayed Road).\n\n' +
-    'Hours: Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM (Fridays: 3:00 PM – 11:30 PM).\n\n' +
-    "Reply '0' to return to the main menu.",
+This all-in-one package includes 51 comprehensive tests, covering:
+• Blood Sugar Profile
+• Cholesterol / Lipid Profile
+• Kidney Function Tests
+• Liver Function Tests
+• Vitamin D & Vitamin B12
+• Complete Blood Count (CBC)
 
-  BOOK:
-    'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
+...and 45+ additional diagnostic markers for a full picture of your health.
+
+📅 To book, reply *BOOK 1* along with your preferred date.`,
+
+  option2IvMenu: `💉 *Medical, Lab & IV Drip Packages* ⭐
+
+Please choose a category by replying with its letter:
+
+*[A]* ── 99 AED Tier Drips
+   (Hydration Drip, Whitening Drip, Melasma Drip)
+
+*[B]* ── 149 AED Tier Drips
+   (Pure Gluta, Vitamin C, Iron Drip)
+
+*[C]* ── 199 AED Tier
+   (Vitamin D / B12 Injection Bundle)
+
+*[D]* ── 299 AED Premium Tier Drips
+   (Cinderella w/ NAD+, Energy Drip)
+
+💳 Flexible installment options via *Tamara* & *Tabby* are accepted at the clinic.`,
+
+  subMenuA: `💧 *99 AED Tier Drips*
+
+• *Hydration Drip* — Replenishes fluids and essential electrolytes, ideal for fatigue, dehydration, and post-travel recovery.
+• *Whitening Drip* — A blend of antioxidants and glutathione boosters to support brighter, even-toned skin.
+• *Melasma Drip* — Targets pigmentation and dark spots with a formula aimed at reducing melasma appearance.
+
+📅 Reply *BOOK IV* to secure your slot.`,
+
+  subMenuB: `💧 *149 AED Tier Drips*
+
+• *Pure Gluta Drip* — High-dose glutathione for antioxidant support and skin brightening.
+• *Vitamin C Drip* — Immune-boosting, collagen-supporting high-dose Vitamin C infusion.
+• *Iron Drip* — Restores iron levels efficiently, helpful for fatigue linked to low iron/anemia.
+
+📅 Reply *BOOK IV* to secure your slot.`,
+
+  subMenuC: `💧 *199 AED Tier*
+
+• *Vitamin D / B12 Injection Bundle* — A combined injection designed to strengthen bones, boost energy, and support overall vitamin levels for a stronger, healthier you.
+
+📅 Reply *BOOK IV* to secure your slot.`,
+
+  subMenuD: `💧 *299 AED Premium Tier Drips*
+
+• *Cinderella Drip w/ NAD+* — Our premium anti-aging and cellular-repair infusion, combining skin-brightening actives with NAD+ for enhanced energy and recovery.
+• *Energy Drip* — A revitalizing blend of B-vitamins and minerals formulated to fight fatigue and restore energy levels.
+
+📅 Reply *BOOK IV* to secure your slot.`,
+
+  option3Dental: `🦷 *Dental Scaling & Polishing — 75 AED*
+
+Includes professional plaque and tartar removal plus a full polish, leaving your teeth clean, smooth, and refreshed.
+
+📅 To book, reply *BOOK DENTAL*.`,
+
+  option4Location: `📍 *Clinic Location & Timings*
+
+*${CLINIC_NAME}*
+Commercial Area, Muwaileh, Sharjah, UAE
+
+🕘 *Timings:* 9 AM – 9 PM, Saturday – Thursday
+
+🗺️ Google Maps: ${MAPS_LINK}`,
+
+  option5Reception: `📞 *Speak to Reception*
+
+Our reception team is ready to assist you directly.
+
+*Call us now:* ${CLINIC_PHONE}
+
+Alternatively, reply *MENU* at any time to return to the main options.`,
+
+  fallback: `🤖 *City Gate Automated Assistant*
+
+For custom packages, urgent diagnostic timelines, or highly specific medical inquiries, let's connect you directly to our medical staff over the phone right now!
+
+📞 *Call Front Desk Directly:* ${CLINIC_PHONE}
+
+We are ready to guide you immediately!`,
 };
 
 // ---------------------------------------------------------------------------
-// Keyword Sets (all matching is case-insensitive; see normalizeText below)
-// ---------------------------------------------------------------------------
-
-const KEYWORDS = {
-  WELCOME: ['hi', 'hello', 'hey', 'menu', 'start', 'deals', 'offers', 'any deals', '0'],
-  DENTAL: ['1', 'dental', 'teeth', 'dentist', 'tooth'],
-  MEDICAL_LAB: ['2', 'lab', 'package', 'packages', 'blood', 'test', 'tests', 'wellness'],
-  LOCATION: ['3', 'location', 'where', 'timing', 'timings', 'hours'],
-  BOOK: ['book'],
-};
-
-// ---------------------------------------------------------------------------
-// Helpers
+// Input normalization + routing
 // ---------------------------------------------------------------------------
 
 /**
- * Normalizes incoming text for reliable, case-insensitive matching:
- * lowercases, trims, and collapses extra whitespace.
+ * Normalizes incoming WhatsApp message text: trims whitespace and
+ * lower-cases it for case-insensitive matching.
  */
-function normalizeText(text) {
-  return String(text || '')
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ');
+function normalizeInput(rawBody) {
+  return (rawBody || '').toString().trim().toLowerCase();
 }
 
 /**
- * Returns true if the normalized message either exactly equals one of the
- * keywords, or contains one of the (non-numeric) keywords as a substring.
- * Numeric keywords (like "1", "2", "3", "0") only match on exact equality
- * so that phone numbers, prices, etc. typed by the user don't accidentally
- * trigger a menu branch.
+ * Resolves the normalized input to a reply message.
  */
-function matchesKeyword(normalizedMessage, keywordList) {
-  return keywordList.some((keyword) => {
-    const isNumeric = /^\d+$/.test(keyword);
-    if (isNumeric) {
-      return normalizedMessage === keyword;
-    }
-    return normalizedMessage === keyword || normalizedMessage.includes(keyword);
-  });
-}
+function getReplyForInput(normalized) {
+  switch (normalized) {
+    case 'hi':
+    case 'hello':
+    case 'menu':
+      return MESSAGES.mainMenu;
 
-/**
- * Core routing logic: given the raw incoming message body, returns the
- * appropriate reply text based on the conversational rules.
- */
-function getReplyForMessage(rawBody) {
-  const message = normalizeText(rawBody);
+    case '1':
+      return MESSAGES.option1HealthPackage;
 
-  if (matchesKeyword(message, KEYWORDS.BOOK)) {
-    return MESSAGES.BOOK;
+    case '2':
+      return MESSAGES.option2IvMenu;
+
+    case 'a':
+      return MESSAGES.subMenuA;
+
+    case 'b':
+      return MESSAGES.subMenuB;
+
+    case 'c':
+      return MESSAGES.subMenuC;
+
+    case 'd':
+      return MESSAGES.subMenuD;
+
+    case '3':
+      return MESSAGES.option3Dental;
+
+    case '4':
+      return MESSAGES.option4Location;
+
+    case '5':
+      return MESSAGES.option5Reception;
+
+    default:
+      return MESSAGES.fallback;
   }
-
-  if (matchesKeyword(message, KEYWORDS.DENTAL)) {
-    return MESSAGES.DENTAL;
-  }
-
-  if (matchesKeyword(message, KEYWORDS.MEDICAL_LAB)) {
-    return MESSAGES.MEDICAL_LAB;
-  }
-
-  if (matchesKeyword(message, KEYWORDS.LOCATION)) {
-    return MESSAGES.LOCATION;
-  }
-
-  if (matchesKeyword(message, KEYWORDS.WELCOME)) {
-    return MESSAGES.WELCOME;
-  }
-
-  // Fallback: anything unrecognized returns the main menu.
-  return MESSAGES.WELCOME;
-}
-
-// ---------------------------------------------------------------------------
-// Optional: Twilio request signature validation (recommended for production)
-// ---------------------------------------------------------------------------
-
-function validateTwilioRequest(req, res, next) {
-  if (!VALIDATE_TWILIO_SIGNATURE) {
-    return next();
-  }
-
-  const twilioSignature = req.headers['x-twilio-signature'];
-
-  // Twilio signs the *exact* public URL it called. If you're behind a proxy
-  // (ngrok, load balancer, etc.), make sure this matches the URL configured
-  // in your Twilio Sandbox/Console settings (protocol + host + path).
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-  const fullUrl = `${protocol}://${req.get('host')}${req.originalUrl}`;
-
-  const isValid = twilio.validateRequest(
-    TWILIO_AUTH_TOKEN,
-    twilioSignature,
-    fullUrl,
-    req.body
-  );
-
-  if (!isValid) {
-    console.warn('⚠️  Rejected request with invalid Twilio signature.');
-    return res.status(403).send('Forbidden: invalid Twilio signature.');
-  }
-
-  return next();
 }
 
 // ---------------------------------------------------------------------------
-// Routes
+// Webhook route
 // ---------------------------------------------------------------------------
 
-// Health check endpoint - useful for deployment platforms (Render, Railway, etc.)
+app.post('/whatsapp', (req, res) => {
+  const incomingMessage = req.body.Body;
+  const normalized = normalizeInput(incomingMessage);
+
+  const replyText = getReplyForInput(normalized);
+
+  const twiml = new MessagingResponse();
+  twiml.message(replyText);
+
+  res.set('Content-Type', 'text/xml');
+  res.status(200).send(twiml.toString());
+});
+
+// Simple health check endpoint, useful for Render deployment checks
 app.get('/', (req, res) => {
-  res.status(200).send('City Gate Medical Center WhatsApp Bot is running.');
-});
-
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', service: 'city-gate-whatsapp-bot' });
-});
-
-// Main Twilio WhatsApp webhook
-app.post('/whatsapp', validateTwilioRequest, (req, res) => {
-  try {
-    const incomingBody = req.body && req.body.Body ? req.body.Body : '';
-    const from = req.body && req.body.From ? req.body.From : 'unknown';
-
-    console.log(`📩 Incoming WhatsApp message from ${from}: "${incomingBody}"`);
-
-    const replyText = getReplyForMessage(incomingBody);
-
-    const twiml = new MessagingResponse();
-    twiml.message(replyText);
-
-    res.type('text/xml').status(200).send(twiml.toString());
-  } catch (err) {
-    console.error('❌ Error handling incoming WhatsApp message:', err);
-
-    // Fail gracefully with a valid empty TwiML response so Twilio doesn't
-    // treat this as a broken webhook.
-    const twiml = new MessagingResponse();
-    twiml.message(
-      'Sorry, something went wrong on our end. Please try again in a moment, or reply "0" for the main menu.'
-    );
-    res.type('text/xml').status(200).send(twiml.toString());
-  }
-});
-
-// 404 handler for any other route
-app.use((req, res) => {
-  res.status(404).send('Not found.');
-});
-
-// Generic error handler
-app.use((err, req, res, next) => {
-  console.error('❌ Unhandled server error:', err);
-  res.status(500).send('Internal server error.');
+  res.status(200).send(`${CLINIC_NAME} WhatsApp bot is running.`);
 });
 
 // ---------------------------------------------------------------------------
-// Start Server
+// Server startup
 // ---------------------------------------------------------------------------
+
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log(`🏥 City Gate Medical Center WhatsApp bot is live on port ${PORT}`);
-  console.log(`   Webhook endpoint: POST http://localhost:${PORT}/whatsapp`);
+  console.log(`${CLINIC_NAME} WhatsApp bot listening on port ${PORT}`);
 });
 
 module.exports = app;
