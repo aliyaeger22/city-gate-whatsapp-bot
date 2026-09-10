@@ -11,6 +11,10 @@
 const express = require('express');
 const twilio = require('twilio');
 
+// ---------------------------------------------------------------------------
+// App setup
+// ---------------------------------------------------------------------------
+
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 const app = express();
@@ -24,28 +28,70 @@ const VALIDATE_TWILIO_SIGNATURE = process.env.VALIDATE_TWILIO_SIGNATURE === 'tru
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 
 // ---------------------------------------------------------------------------
-// Message Templates (Mobile-Optimized Layout)
+// Message templates (with Silver & Gold packages integrated)
 // ---------------------------------------------------------------------------
 
 const MESSAGES = {
   WELCOME:
-    'Welcome to City Gate Medical Center, Sharjah! 🏥\n\n' +
+    'Welcome to *City Gate Medical Center, Sharjah*! 🏥\n\n' +
     'How can we help you today? Please reply with a number or keyword:\n\n' +
     '1️⃣ Complete Health Package (50 AED)\n' +
-    '2️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
-    '3️⃣ Mega Dental Offers (75 AED)\n' +
-    '4️⃣ Clinic Location & Timings',
+    '2️⃣ Silver Full-Body Package (49 AED) 🥈\n' +
+    '3️⃣ Gold Full-Body Package (99 AED) 🥇\n' +
+    '4️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
+    '5️⃣ Mega Dental Offers (75 AED)\n' +
+    '6️⃣ Clinic Location & Timings',
 
   HEALTH_50:
-    '📋 Complete Health Package (50 AED)\n' +
-    'Our most popular preventive package. Includes 51 essential tests:\n\n' +
-    '• Blood Sugar & Cholesterol\n' +
-    '• Kidney & Liver Functions\n' +
-    '• Vitamin D & Vitamin B12\n' +
-     "To schedule your booking, reply 'BOOK' to connect with our front desk, or type '0' to return to the main menu.",
+    '📋 *Complete Health Package (50 AED)*\n' +
+    'Our standard preventive package including 50 essential tests across metabolic tracking, sugar evaluation, and vitamin monitoring.\n\n' +
+    "To schedule your booking, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  SILVER_49:
+    '🥈 *SILVER FULL-BODY PACKAGE (49 AED)* 🥈\n' +
+    'A comprehensive laboratory diagnostic profile mapping critical health metrics:\n\n' +
+    '🩸 *IRON DEFICIENCY*\n' +
+    '• Iron\n\n' +
+    '🧪 *RENAL FUNCTION (Kidneys)*\n' +
+    '• Creatinine\n' +
+    '• Uric Acid\n' +
+    '• Bun\n\n' +
+    '📊 *LIPID PROFILE (Cholesterol)*\n' +
+    '• Total Cholesterol\n' +
+    '• Triglycerides\n' +
+    '• HDL\n' +
+    '• LDL\n\n' +
+    '🩺 *GENERAL HEALTH*\n' +
+    '• CBC (Complete Blood Count)\n\n' +
+    "To book your Silver Package, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  GOLD_99:
+    '🥇 *GOLD FULL-BODY PACKAGE (99 AED)* 🥇\n' +
+    'Our elite multi-system wellness panel containing targeted deep-dive diagnostics:\n\n' +
+    '🩸 *IRON DEFICIENCY*\n' +
+    '• Iron | Tibc\n\n' +
+    '🧪 *RENAL FUNCTION (Kidneys)*\n' +
+    '• Creatinine | Uric Acid | Bun | Calcium\n\n' +
+    '🍬 *DIABETES*\n' +
+    '• RBS / FBS (Blood Sugar)\n' +
+    '• HbA1C (3-Month Average Sugar)\n\n' +
+    '🧬 *LIVER FUNCTION*\n' +
+    '• Bilirubin Total | Bilirubin Direct\n' +
+    '• Alt/Sgpt | Ast/Sgot\n' +
+    '• Alkaline Phosphastate | Albumin | Globulin\n' +
+    '• Ggt | Total Protein\n\n' +
+    '🦋 *THYROID*\n' +
+    '• T3 | T4 | TSH\n\n' +
+    '📊 *LIPID PROFILE*\n' +
+    '• Total Cholesterol | Triglycerides | Hdl\n' +
+    '• Ldl | Vldl | Non-Hdl Cholesterol\n' +
+    '• Ldl Hdl Ratio\n\n' +
+    '🦴 *BONES*\n' +
+    '• Vitamin D\n\n' +
+    "To book your Gold Package, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   MEDICAL_LAB_IV:
-    '💧 IV DRIPS TIER MENU 💧\n' +
+     '💧 IV DRIPS TIER MENU 💧\n' +
     'Feel better, look brighter, live stronger!\n\n' +
     'Please reply with a letter (A, B, C, or D) to check details:\n\n' +
     '🔹 [A] 99 AED Tier Drips\n' +
@@ -59,33 +105,8 @@ const MESSAGES = {
     '📌 Starting Offer 99 AED! Buy Now, Pay Later available via Tamara & Tabby.\n\n' +
     "Reply '0' to return to the main menu.",
 
-  DRIP_A:
-    '💧 99 AED Tier Drips Menu 💧\n\n' +
-    '• HYDRATION DRIP: Deep hydration for your body.\n' +
-    '• WHITENING DRIP: Brighten your skin naturally.\n' +
-    '• MELASMA DRIP: Helps reduce pigmentation.\n\n' +
-    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
-
-  DRIP_B:
-    '🍊 149 AED Tier Drips Menu 🍊\n\n' +
-    '• PURE GLUTA: Powerful skin brightening.\n' +
-    '• VITAMIN C: Boosts immunity & glow.\n' +
-    '• IRON DRIP: Fights fatigue & boosts energy.\n\n' +
-    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
-
-  DRIP_C:
-    '🦴 199 AED Tier Drip Menu 🦴\n\n' +
-    '• VITAMIN D / B12: Stronger bones & more energy.\n\n' +
-    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
-
-  DRIP_D:
-    '👑 299 AED Premium Tier Drips Menu 👑\n\n' +
-    '• CINDERELLA w/ NAD+: Ultimate glow & anti-aging.\n' +
-    '• ENERGY DRIP: Recharge your body & mind.\n\n' +
-    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
-
   DENTAL:
-    '🦷 City Gate Mega Dental Offers 🦷\n' +
+    '🦷 *City Gate Mega Dental Offers* 🦷\n' +
     'Premium specialist cleanings and operations at local Sharjah rates:\n\n' +
     '• Comprehensive Consultation + Scaling & Polishing: 75 AED\n' +
     '• Dental Filling: 99 AED\n' +
@@ -94,41 +115,61 @@ const MESSAGES = {
     '• Surgical Extraction: 250 AED\n' +
     '• Specialized Root Canal Treatment: 400 AED\n' +
     '• Impacted Wisdom Tooth Extraction: 500 AED\n\n' +
-    "Would you like to reserve a dental chair? Reply 'BOOK' to send a request, or type '0' to return to the main menu.",
+    "Would you like to reserve a dental chair? Reply *'BOOK'* to send a request, or type *'0'* to return to the main menu.",
 
   LOCATION:
-    '📍 City Gate Medical Center Location & Hours:\n' +
+    '📍 *City Gate Medical Center Location & Hours*:\n' +
     'Building 575, Muwaileh Commercial, Sharjah (Behind Sheikh Mohammed Bin Zayed Road).\n\n' +
-    '⏰ Timings: Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM.\n' +
-    '🕌 Fridays: 3:00 PM – 11:30 PM.\n' +
+    '⏰ *Timings:* Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM.\n' +
+    '🕌 *Fridays:* 3:00 PM – 11:30 PM.\n' +
     '📍 Google Maps Direction Link: https://maps.google.com/?q=City+Gate+Medical+Center\n\n' +
-    "Reply '0' to return to the menu.",
+    "Reply *'0'* to return to the menu.",
 
   BOOK: 'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
 
   FALLBACK:
-    '🤖 City Gate Automated Assistant\n\n' +
+    '🤖 *City Gate Automated Assistant*\n\n' +
     'For custom treatment questions, urgent file updates, or to speak directly with our clinical reception staff, please call our front desk phone team directly right now!\n\n' +
-    '📞 Call Us Instantly: +971 55 948 4795\n\n' +
+    '📞 *Call Us Instantly:* +971 55 948 4795\n\n' +
     'We are ready to assist you immediately over the phone!',
 };
 
 // ---------------------------------------------------------------------------
-// Keyword Sets (Case-insensitive mapping structure)
+// Keyword sets (case-insensitive mapping structure)
 // ---------------------------------------------------------------------------
 
 const KEYWORDS = {
   WELCOME: ['hi', 'hello', 'hey', 'menu', 'start', 'deals', 'offers', '0'],
   HEALTH_50: ['1', 'health', 'screening', '50 aed'],
-  MEDICAL_LAB_IV: ['2', 'lab', 'package', 'packages', 'blood', 'test', 'tests', 'wellness', 'iv', 'drip', 'drips'],
-  DRIP_A: ['a', '99 aed', '99'],
-  DRIP_B: ['b', '149 aed', '149'],
-  DRIP_C: ['c', '199 aed', '199'],
-  DRIP_D: ['d', '299 aed', '299', 'nad'],
-  DENTAL: ['3', 'dental', 'teeth', 'dentist', 'tooth', 'scaling'],
-  LOCATION: ['4', 'location', 'where', 'timing', 'timings', 'hours'],
+  SILVER_49: ['2', 'silver', '49', '49 aed'],
+  GOLD_99: ['3', 'gold', '99', '99 aed'],
+  MEDICAL_LAB_IV: ['4', 'lab', 'package', 'packages', 'blood', 'test', 'tests', 'wellness', 'iv', 'drip', 'drips'],
+  DRIP_A: ['a'],
+  DRIP_B: ['b'],
+  DRIP_C: ['c'],
+  DRIP_D: ['d', 'nad'],
+  DENTAL: ['5', 'dental', 'teeth', 'dentist', 'tooth', 'scaling'],
+  LOCATION: ['6', 'location', 'where', 'timing', 'timings', 'hours'],
   BOOK: ['book', 'reception', 'call', 'talk', 'agent'],
 };
+
+// Order in which keyword groups are checked. Kept as a single ordered list
+// (rather than a long if/else chain) so the routing priority is explicit
+// and easy to re-order without touching the matching logic.
+const ROUTING_ORDER = [
+  'BOOK',
+  'HEALTH_50',
+  'SILVER_49',
+  'GOLD_99',
+  'DRIP_A',
+  'DRIP_B',
+  'DRIP_C',
+  'DRIP_D',
+  'MEDICAL_LAB_IV',
+  'DENTAL',
+  'LOCATION',
+  'WELCOME',
+];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -146,6 +187,9 @@ function matchesKeyword(normalizedMessage, keywordList) {
     const isNumeric = /^\d+$/.test(keyword);
     const isSingleLetter = keyword.length === 1 && /[a-z]/.test(keyword);
 
+    // Numeric and single-letter keywords must match the whole message
+    // exactly, otherwise short tokens like "1" or "a" would match almost
+    // any longer message that happens to contain that character.
     if (isNumeric || isSingleLetter) {
       return normalizedMessage === keyword;
     }
@@ -157,22 +201,13 @@ function matchesKeyword(normalizedMessage, keywordList) {
 function getReplyForMessage(rawBody) {
   const message = normalizeText(rawBody);
 
-  if (matchesKeyword(message, KEYWORDS.BOOK)) return MESSAGES.BOOK;
-  if (matchesKeyword(message, KEYWORDS.HEALTH_50)) return MESSAGES.HEALTH_50;
-  if (matchesKeyword(message, KEYWORDS.DRIP_A)) return MESSAGES.DRIP_A;
-  if (matchesKeyword(message, KEYWORDS.DRIP_B)) return MESSAGES.DRIP_B;
-  if (matchesKeyword(message, KEYWORDS.DRIP_C)) return MESSAGES.DRIP_C;
-  if (matchesKeyword(message, KEYWORDS.DRIP_D)) return MESSAGES.DRIP_D;
-  if (matchesKeyword(message, KEYWORDS.MEDICAL_LAB_IV)) return MESSAGES.MEDICAL_LAB_IV;
-  if (matchesKeyword(message, KEYWORDS.DENTAL)) return MESSAGES.DENTAL;
-  if (matchesKeyword(message, KEYWORDS.LOCATION)) return MESSAGES.LOCATION;
-  if (matchesKeyword(message, KEYWORDS.WELCOME)) return MESSAGES.WELCOME;
+  const matchedKey = ROUTING_ORDER.find((key) => matchesKeyword(message, KEYWORDS[key]));
 
-  return MESSAGES.FALLBACK;
+  return matchedKey ? MESSAGES[matchedKey] : MESSAGES.FALLBACK;
 }
 
 // ---------------------------------------------------------------------------
-// Twilio Request Signature Validation
+// Twilio request signature validation
 // ---------------------------------------------------------------------------
 
 function validateTwilioRequest(req, res, next) {
@@ -235,7 +270,7 @@ app.use((req, res) => res.status(404).send('Not found.'));
 app.use((err, req, res, next) => res.status(500).send('Internal server error.'));
 
 // ---------------------------------------------------------------------------
-// Start Server
+// Start server
 // ---------------------------------------------------------------------------
 
 app.listen(PORT, () => {
