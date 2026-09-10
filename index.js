@@ -1,224 +1,246 @@
 /**
- * City Gate Medical Center — Twilio WhatsApp Chatbot
- * ---------------------------------------------------
- * A stateless, menu-driven WhatsApp bot built with Express and Twilio's
- * MessagingResponse (TwiML). Deployable on Render (or any Node host).
+ * City Gate Medical Center - WhatsApp Chatbot Webhook
  *
- * Run:
- *   npm install express twilio
- *   node app.js
- *
- * Env:
- *   PORT  (optional) - defaults to 10000, falls back for Render compatibility
+ * A production-ready Express.js server that handles incoming WhatsApp
+ * messages via the Twilio WhatsApp API and routes them using simple,
+ * case-insensitive keyword matching.
  */
 
-const express = require('express');
+'use strict';
 
+const express = require('express');
 const twilio = require('twilio');
 
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
 const app = express();
 
-// Twilio sends webhook payloads as application/x-www-form-urlencoded
+// Twilio sends incoming webhook data as application/x-www-form-urlencoded
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-const CLINIC_NAME = 'City Gate Medical Center';
-const CLINIC_PHONE = '+971 55 948 4795';
-const MAPS_LINK = 'https://maps.app.goo.gl/CityGateMedicalCenterMuwaileh';
+const PORT = process.env.PORT || 10000;
+const VALIDATE_TWILIO_SIGNATURE = process.env.VALIDATE_TWILIO_SIGNATURE === 'true';
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 
 // ---------------------------------------------------------------------------
-// Message templates
+// Message Templates (Mobile-Optimized Layout)
 // ---------------------------------------------------------------------------
 
 const MESSAGES = {
-  mainMenu: `Welcome to *${CLINIC_NAME}*! 🩺
+  WELCOME:
+    'Welcome to City Gate Medical Center, Sharjah! 🏥\n\n' +
+    'How can we help you today? Please reply with a number or keyword:\n\n' +
+    '1️⃣ Complete Health Package (50 AED)\n' +
+    '2️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
+    '3️⃣ Mega Dental Offers (75 AED)\n' +
+    '4️⃣ Clinic Location & Timings',
 
-How can we help you today? Please reply with a number:
-*1* ── Complete Health Package (50 AED)
-*2* ── Medical, Lab & IV Drip Packages ⭐
-*3* ── Dental Scaling & Polishing (75 AED)
-*4* ── Clinic Location & Timings
-*5* ── Speak to Reception`,
+  HEALTH_50:
+    '📋 Complete Health Package (50 AED)\n' +
+    'Our most popular preventive package. Includes 51 essential tests:\n\n' +
+    '• Blood Sugar & Cholesterol\n' +
+    '• Kidney & Liver Functions\n' +
+    '• Vitamin D & Vitamin B12\n' +
+    '• Complete Blood Count (CBC)\n\n' +
+    "To schedule your booking, reply 'BOOK' to connect with our front desk, or type '0' to return to the main menu.",
 
-  option1HealthPackage: `🩺 *Complete Health Package — 50 AED*
+  MEDICAL_LAB_IV:
+    '💧 IV DRIPS TIER MENU 💧\n' +
+    'Feel better, look brighter, live stronger!\n\n' +
+    'Please reply with a letter (A, B, C, or D) to check details:\n\n' +
+    '🔹 [A] 99 AED Tier Drips\n' +
+    '• Hydration, Whitening, or Melasma Drip\n\n' +
+    '🔹 [B] 149 AED Tier Drips\n' +
+    '• Pure Gluta, Vitamin C, or Iron Drip\n\n' +
+    '🔹 [C] 199 AED Tier Drip\n' +
+    '• Vitamin D / B12 Drip\n\n' +
+    '🔹 [D] 299 AED Premium Tier Drips\n' +
+    '• Cinderella w/ NAD+ or Energy Drip\n\n' +
+    '📌 Starting Offer 99 AED! Buy Now, Pay Later available via Tamara & Tabby.\n\n' +
+    "Reply '0' to return to the main menu.",
 
-This all-in-one package includes 51 comprehensive tests, covering:
-• Blood Sugar Profile
-• Cholesterol / Lipid Profile
-• Kidney Function Tests
-• Liver Function Tests
-• Vitamin D & Vitamin B12
-• Complete Blood Count (CBC)
+  DRIP_A:
+    '💧 99 AED Tier Drips Menu 💧\n\n' +
+    '• HYDRATION DRIP: Deep hydration for your body.\n' +
+    '• WHITENING DRIP: Brighten your skin naturally.\n' +
+    '• MELASMA DRIP: Helps reduce pigmentation.\n\n' +
+    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
 
-...and 45+ additional diagnostic markers for a full picture of your health.
+  DRIP_B:
+    '🍊 149 AED Tier Drips Menu 🍊\n\n' +
+    '• PURE GLUTA: Powerful skin brightening.\n' +
+    '• VITAMIN C: Boosts immunity & glow.\n' +
+    '• IRON DRIP: Fights fatigue & boosts energy.\n\n' +
+    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
 
-📅 To book, reply *BOOK 1* along with your preferred date.`,
+  DRIP_C:
+    '🦴 199 AED Tier Drip Menu 🦴\n\n' +
+    '• VITAMIN D / B12: Stronger bones & more energy.\n\n' +
+    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
 
-  option2IvMenu: `💉 *Medical, Lab & IV Drip Packages* ⭐
+  DRIP_D:
+    '👑 299 AED Premium Tier Drips Menu 👑\n\n' +
+    '• CINDERELLA w/ NAD+: Ultimate glow & anti-aging.\n' +
+    '• ENERGY DRIP: Recharge your body & mind.\n\n' +
+    "To reserve your session today, reply 'BOOK', or type '0' to return to the menu.",
 
-Please choose a category by replying with its letter:
+  DENTAL:
+    '🦷 City Gate Mega Dental Offers 🦷\n' +
+    'Premium specialist cleanings and operations at local Sharjah rates:\n\n' +
+    '• Comprehensive Consultation + Scaling & Polishing: 75 AED\n' +
+    '• Dental Filling: 99 AED\n' +
+    '• Normal Extraction: 99 AED\n' +
+    '• Crown & Bridge Work: 250 AED\n' +
+    '• Surgical Extraction: 250 AED\n' +
+    '• Specialized Root Canal Treatment: 400 AED\n' +
+    '• Impacted Wisdom Tooth Extraction: 500 AED\n\n' +
+    "Would you like to reserve a dental chair? Reply 'BOOK' to send a request, or type '0' to return to the main menu.",
 
-*[A]* ── 99 AED Tier Drips
-   (Hydration Drip, Whitening Drip, Melasma Drip)
+  LOCATION:
+    '📍 City Gate Medical Center Location & Hours:\n' +
+    'Building 575, Muwaileh Commercial, Sharjah (Behind Sheikh Mohammed Bin Zayed Road).\n\n' +
+    '⏰ Timings: Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM.\n' +
+    '🕌 Fridays: 3:00 PM – 11:30 PM.\n' +
+    '📍 Google Maps Direction Link: https://maps.google.com/?q=City+Gate+Medical+Center\n\n' +
+    "Reply '0' to return to the menu.",
 
-*[B]* ── 149 AED Tier Drips
-   (Pure Gluta, Vitamin C, Iron Drip)
+  BOOK: 'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
 
-*[C]* ── 199 AED Tier
-   (Vitamin D / B12 Injection Bundle)
-
-*[D]* ── 299 AED Premium Tier Drips
-   (Cinderella w/ NAD+, Energy Drip)
-
-💳 Flexible installment options via *Tamara* & *Tabby* are accepted at the clinic.`,
-
-  subMenuA: `💧 *99 AED Tier Drips*
-
-• *Hydration Drip* — Replenishes fluids and essential electrolytes, ideal for fatigue, dehydration, and post-travel recovery.
-• *Whitening Drip* — A blend of antioxidants and glutathione boosters to support brighter, even-toned skin.
-• *Melasma Drip* — Targets pigmentation and dark spots with a formula aimed at reducing melasma appearance.
-
-📅 Reply *BOOK IV* to secure your slot.`,
-
-  subMenuB: `💧 *149 AED Tier Drips*
-
-• *Pure Gluta Drip* — High-dose glutathione for antioxidant support and skin brightening.
-• *Vitamin C Drip* — Immune-boosting, collagen-supporting high-dose Vitamin C infusion.
-• *Iron Drip* — Restores iron levels efficiently, helpful for fatigue linked to low iron/anemia.
-
-📅 Reply *BOOK IV* to secure your slot.`,
-
-  subMenuC: `💧 *199 AED Tier*
-
-• *Vitamin D / B12 Injection Bundle* — A combined injection designed to strengthen bones, boost energy, and support overall vitamin levels for a stronger, healthier you.
-
-📅 Reply *BOOK IV* to secure your slot.`,
-
-  subMenuD: `💧 *299 AED Premium Tier Drips*
-
-• *Cinderella Drip w/ NAD+* — Our premium anti-aging and cellular-repair infusion, combining skin-brightening actives with NAD+ for enhanced energy and recovery.
-• *Energy Drip* — A revitalizing blend of B-vitamins and minerals formulated to fight fatigue and restore energy levels.
-
-📅 Reply *BOOK IV* to secure your slot.`,
-
-  option3Dental: `🦷 *Dental Scaling & Polishing — 75 AED*
-
-Includes professional plaque and tartar removal plus a full polish, leaving your teeth clean, smooth, and refreshed.
-
-📅 To book, reply *BOOK DENTAL*.`,
-
-  option4Location: `📍 *Clinic Location & Timings*
-
-*${CLINIC_NAME}*
-Commercial Area, Muwaileh, Sharjah, UAE
-
-🕘 *Timings:* 9 AM – 9 PM, Saturday – Thursday
-
-🗺️ Google Maps: ${MAPS_LINK}`,
-
-  option5Reception: `📞 *Speak to Reception*
-
-Our reception team is ready to assist you directly.
-
-*Call us now:* ${CLINIC_PHONE}
-
-Alternatively, reply *MENU* at any time to return to the main options.`,
-
-  fallback: `🤖 *City Gate Automated Assistant*
-
-For custom packages, urgent diagnostic timelines, or highly specific medical inquiries, let's connect you directly to our medical staff over the phone right now!
-
-📞 *Call Front Desk Directly:* ${CLINIC_PHONE}
-
-We are ready to guide you immediately!`,
+  FALLBACK:
+    '🤖 City Gate Automated Assistant\n\n' +
+    'For custom treatment questions, urgent file updates, or to speak directly with our clinical reception staff, please call our front desk phone team directly right now!\n\n' +
+    '📞 Call Us Instantly: +971 55 948 4795\n\n' +
+    'We are ready to assist you immediately over the phone!',
 };
 
 // ---------------------------------------------------------------------------
-// Input normalization + routing
+// Keyword Sets (Case-insensitive mapping structure)
 // ---------------------------------------------------------------------------
 
-/**
- * Normalizes incoming WhatsApp message text: trims whitespace and
- * lower-cases it for case-insensitive matching.
- */
-function normalizeInput(rawBody) {
-  return (rawBody || '').toString().trim().toLowerCase();
+const KEYWORDS = {
+  WELCOME: ['hi', 'hello', 'hey', 'menu', 'start', 'deals', 'offers', '0'],
+  HEALTH_50: ['1', 'health', 'screening', '50 aed'],
+  MEDICAL_LAB_IV: ['2', 'lab', 'package', 'packages', 'blood', 'test', 'tests', 'wellness', 'iv', 'drip', 'drips'],
+  DRIP_A: ['a', '99 aed', '99'],
+  DRIP_B: ['b', '149 aed', '149'],
+  DRIP_C: ['c', '199 aed', '199'],
+  DRIP_D: ['d', '299 aed', '299', 'nad'],
+  DENTAL: ['3', 'dental', 'teeth', 'dentist', 'tooth', 'scaling'],
+  LOCATION: ['4', 'location', 'where', 'timing', 'timings', 'hours'],
+  BOOK: ['book', 'reception', 'call', 'talk', 'agent'],
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function normalizeText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
 }
 
-/**
- * Resolves the normalized input to a reply message.
- */
-function getReplyForInput(normalized) {
-  switch (normalized) {
-    case 'hi':
-    case 'hello':
-    case 'menu':
-      return MESSAGES.mainMenu;
+function matchesKeyword(normalizedMessage, keywordList) {
+  return keywordList.some((keyword) => {
+    const isNumeric = /^\d+$/.test(keyword);
+    const isSingleLetter = keyword.length === 1 && /[a-z]/.test(keyword);
 
-    case '1':
-      return MESSAGES.option1HealthPackage;
+    if (isNumeric || isSingleLetter) {
+      return normalizedMessage === keyword;
+    }
 
-    case '2':
-      return MESSAGES.option2IvMenu;
+    return normalizedMessage === keyword || normalizedMessage.includes(keyword);
+  });
+}
 
-    case 'a':
-      return MESSAGES.subMenuA;
+function getReplyForMessage(rawBody) {
+  const message = normalizeText(rawBody);
 
-    case 'b':
-      return MESSAGES.subMenuB;
+  if (matchesKeyword(message, KEYWORDS.BOOK)) return MESSAGES.BOOK;
+  if (matchesKeyword(message, KEYWORDS.HEALTH_50)) return MESSAGES.HEALTH_50;
+  if (matchesKeyword(message, KEYWORDS.DRIP_A)) return MESSAGES.DRIP_A;
+  if (matchesKeyword(message, KEYWORDS.DRIP_B)) return MESSAGES.DRIP_B;
+  if (matchesKeyword(message, KEYWORDS.DRIP_C)) return MESSAGES.DRIP_C;
+  if (matchesKeyword(message, KEYWORDS.DRIP_D)) return MESSAGES.DRIP_D;
+  if (matchesKeyword(message, KEYWORDS.MEDICAL_LAB_IV)) return MESSAGES.MEDICAL_LAB_IV;
+  if (matchesKeyword(message, KEYWORDS.DENTAL)) return MESSAGES.DENTAL;
+  if (matchesKeyword(message, KEYWORDS.LOCATION)) return MESSAGES.LOCATION;
+  if (matchesKeyword(message, KEYWORDS.WELCOME)) return MESSAGES.WELCOME;
 
-    case 'c':
-      return MESSAGES.subMenuC;
+  return MESSAGES.FALLBACK;
+}
 
-    case 'd':
-      return MESSAGES.subMenuD;
+// ---------------------------------------------------------------------------
+// Twilio Request Signature Validation
+// ---------------------------------------------------------------------------
 
-    case '3':
-      return MESSAGES.option3Dental;
-
-    case '4':
-      return MESSAGES.option4Location;
-
-    case '5':
-      return MESSAGES.option5Reception;
-
-    default:
-      return MESSAGES.fallback;
+function validateTwilioRequest(req, res, next) {
+  if (!VALIDATE_TWILIO_SIGNATURE) {
+    return next();
   }
+
+  const twilioSignature = req.headers['x-twilio-signature'];
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const fullUrl = `${protocol}://${req.get('host')}${req.originalUrl}`;
+
+  const isValid = twilio.validateRequest(TWILIO_AUTH_TOKEN, twilioSignature, fullUrl, req.body);
+
+  if (!isValid) {
+    console.warn('⚠️  Rejected request with invalid Twilio signature.');
+    return res.status(403).send('Forbidden: invalid Twilio signature.');
+  }
+
+  return next();
 }
 
 // ---------------------------------------------------------------------------
-// Webhook route
+// Routes
 // ---------------------------------------------------------------------------
 
-app.post('/whatsapp', (req, res) => {
-  const incomingMessage = req.body.Body;
-  const normalized = normalizeInput(incomingMessage);
-
-  const replyText = getReplyForInput(normalized);
-
-  const twiml = new MessagingResponse();
-  twiml.message(replyText);
-
-  res.set('Content-Type', 'text/xml');
-  res.status(200).send(twiml.toString());
-});
-
-// Simple health check endpoint, useful for Render deployment checks
 app.get('/', (req, res) => {
-  res.status(200).send(`${CLINIC_NAME} WhatsApp bot is running.`);
+  res.status(200).send('City Gate Medical Center WhatsApp Bot is running.');
 });
 
-// ---------------------------------------------------------------------------
-// Server startup
-// ---------------------------------------------------------------------------
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'city-gate-whatsapp-bot' });
+});
 
-const PORT = process.env.PORT || 10000;
+app.post('/whatsapp', validateTwilioRequest, (req, res) => {
+  try {
+    const incomingBody = req.body && req.body.Body ? req.body.Body : '';
+    const from = req.body && req.body.From ? req.body.From : 'unknown';
+
+    console.log(`Incoming message from ${from}: "${incomingBody}"`);
+
+    const replyText = getReplyForMessage(incomingBody);
+
+    const twiml = new MessagingResponse();
+    twiml.message(replyText);
+
+    res.type('text/xml').status(200).send(twiml.toString());
+  } catch (err) {
+    console.error('Error handling incoming WhatsApp message:', err);
+
+    const twiml = new MessagingResponse();
+    twiml.message(MESSAGES.FALLBACK);
+
+    res.type('text/xml').status(200).send(twiml.toString());
+  }
+});
+
+app.use((req, res) => res.status(404).send('Not found.'));
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => res.status(500).send('Internal server error.'));
+
+// ---------------------------------------------------------------------------
+// Start Server
+// ---------------------------------------------------------------------------
 
 app.listen(PORT, () => {
-  console.log(`${CLINIC_NAME} WhatsApp bot listening on port ${PORT}`);
+  console.log(`City Gate Medical Center bot live on port ${PORT}`);
 });
 
 module.exports = app;
