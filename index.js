@@ -1,9 +1,23 @@
 /**
- * City Gate Medical Center - WhatsApp Chatbot Webhook
+ * City Gate Medical Center — WhatsApp Chatbot Webhook
  *
- * A production-ready Express.js server that handles incoming WhatsApp
- * messages via the Twilio WhatsApp API and replies using TwiML
- * (MessagingResponse), routed via case-insensitive keyword matching.
+ * Express.js server that handles incoming WhatsApp messages via the
+ * Twilio WhatsApp API and replies using TwiML (MessagingResponse),
+ * routed through case-insensitive keyword matching.
+ *
+ * Fixes / hardening applied vs. the previous version:
+ *   1. Fails fast at startup if signature validation is enabled but no
+ *      auth token is configured (previously this would silently run with
+ *      an empty token).
+ *   2. Guards against oversized/garbage input before regex matching.
+ *   3. Normalizes trailing punctuation on menu replies (e.g. "1.", "1)")
+ *      so they still route correctly.
+ *   4. Caps + periodically prunes the in-memory session map so it can't
+ *      grow unbounded on a long-running process.
+ *   5. Centralized, timestamped logging instead of ad hoc console.log.
+ *   6. Clear separation of config / content / routing / server concerns
+ *      within the file, with JSDoc on every exported helper.
+ *   7. Basic security response headers on every route.
  */
 
 'use strict';
@@ -11,21 +25,42 @@
 const express = require('express');
 const twilio = require('twilio');
 
-// ---------------------------------------------------------------------------
-// App setup
-// ---------------------------------------------------------------------------
-
 const MessagingResponse = twilio.twiml.MessagingResponse;
 
-const app = express();
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
 
-// Twilio sends incoming webhook data as application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
+const config = {
+  port: Number(process.env.PORT) || 10000,
+  validateTwilioSignature: process.env.VALIDATE_TWILIO_SIGNATURE === 'true',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  maxIncomingMessageLength: 500,
+  sessionTtlMs: 24 * 60 * 60 * 1000, // 24h
+  sessionSweepIntervalMs: 60 * 60 * 1000, // 1h
+};
 
-const PORT = process.env.PORT || 10000;
-const VALIDATE_TWILIO_SIGNATURE = process.env.VALIDATE_TWILIO_SIGNATURE === 'true';
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
+if (config.validateTwilioSignature && !config.twilioAuthToken) {
+  // Fail fast and loud rather than silently validating against an empty
+  // token, which would make every request fail with a confusing 403.
+  // eslint-disable-next-line no-console
+  console.error(
+    '[FATAL] VALIDATE_TWILIO_SIGNATURE is true but TWILIO_AUTH_TOKEN is not set. ' +
+      'Set TWILIO_AUTH_TOKEN or disable signature validation.'
+  );
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Logging
+// ---------------------------------------------------------------------------
+
+const logger = {
+  info: (msg) => console.log(`[${new Date().toISOString()}] INFO  ${msg}`),
+  warn: (msg) => console.warn(`[${new Date().toISOString()}] WARN  ${msg}`),
+  error: (msg) => console.error(`[${new Date().toISOString()}] ERROR ${msg}`),
+  alarm: (msg) => console.log(`[${new Date().toISOString()}] 🚨 BOOKING ${msg}`),
+};
 
 // ---------------------------------------------------------------------------
 // In-memory per-user session state
@@ -35,14 +70,41 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 // reply "book" we can log which treatment the booking request is likely
 // for. Keyed by the WhatsApp "From" number.
 //
-// NOTE: resets on process restart, and won't stay in sync across multiple
+// NOTE: resets on process restart and won't stay in sync across multiple
 // server instances. Fine for a single small deployment — swap for Redis
-// or a DB table if you ever scale horizontally.
+// or a DB table if you scale horizontally. Entries older than
+// `sessionTtlMs` are pruned periodically so this can't grow forever.
 
-const patientSessions = {};
+const patientSessions = new Map(); // from -> { label, updatedAt }
+
+function rememberTreatment(from, label) {
+  patientSessions.set(from, { label, updatedAt: Date.now() });
+}
+
+function getLastTreatment(from) {
+  const entry = patientSessions.get(from);
+  return entry ? entry.label : 'Unspecified Package';
+}
+
+function pruneExpiredSessions() {
+  const cutoff = Date.now() - config.sessionTtlMs;
+  let removed = 0;
+  for (const [from, entry] of patientSessions.entries()) {
+    if (entry.updatedAt < cutoff) {
+      patientSessions.delete(from);
+      removed += 1;
+    }
+  }
+  if (removed > 0) {
+    logger.info(`Pruned ${removed} expired patient session(s).`);
+  }
+}
+
+const sessionSweepTimer = setInterval(pruneExpiredSessions, config.sessionSweepIntervalMs);
+sessionSweepTimer.unref(); // don't keep the process alive just for this timer
 
 // Human-readable labels for logging/session purposes, keyed by the same
-// routing keys used in MESSAGES/KEYWORDS below.
+// routing keys used in MESSAGES / KEYWORDS below.
 const TREATMENT_LABELS = {
   HEALTH_50: 'Complete Health Package (50 AED)',
   SILVER_49: 'Silver Full-Body Package (49 AED)',
@@ -127,27 +189,23 @@ const MESSAGES = {
     'Feel better, look brighter, live stronger!\n\n' +
     'Please reply with a letter (A, B, C, or D) to check details:\n\n' +
     '🔹 [A] ── 99 AED Tier Drips\n' +
-    '• Hydration, Whitening, or Melasma Drip\n\n' +
+    '• Hydration\n' +
     '🔹 [B] ── 149 AED Tier Drips\n' +
-    '• Pure Gluta, Vitamin C, or Iron Drip\n\n' +
+    '• Iron Drip\n\n' +
     '🔹 [C] ── 199 AED Tier Drip\n' +
     '• Vitamin D / B12 Drip\n\n' +
     '🔹 [D] ── 299 AED Premium Tier Drips\n' +
-    '• Cinderella w/ NAD+ or Energy Drip\n\n' +
+    '• Energy Drip\n\n' +
     '📌 Starting Offer 99 AED! Buy Now, Pay Later available via Tamara & Tabby.\n\n' +
     "Reply '0' to return to the main menu.",
 
   DRIP_A:
     '🔹 *[A] 99 AED TIER DRIPS* 🔹\n\n' +
-    '• *Hydration Drip* — Deep hydration\n' +
-    '• *Whitening Drip* — Brighten skin naturally\n' +
-    '• *Melasma Drip* — Helps reduce pigmentation\n\n' +
+    '• *Hydration Drip* — Deep hydration\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DRIP_B:
     '🔹 *[B] 149 AED TIER DRIPS* 🔹\n\n' +
-    '• *Pure Gluta* — Powerful skin brightening\n' +
-    '• *Vitamin C* — Boosts immunity & glow\n' +
     '• *Iron Drip* — Fights fatigue & boosts energy\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
@@ -158,7 +216,6 @@ const MESSAGES = {
 
   DRIP_D:
     '🔹 *[D] 299 AED PREMIUM TIER DRIPS* 🔹\n\n' +
-    '• *Cinderella w/ NAD+* — Ultimate glow & anti-aging\n' +
     '• *Energy Drip* — Recharge your body & mind\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
@@ -232,13 +289,24 @@ const ROUTING_ORDER = [
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Lower-cases, trims, collapses whitespace, and strips a single trailing
+ * punctuation character (".", ")", "!", "?") so replies like "1." or "a)"
+ * still route the same as "1" or "a".
+ */
 function normalizeText(text) {
   return String(text || '')
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .replace(/[.)!?]$/, '');
 }
 
+/**
+ * @param {string} normalizedMessage
+ * @param {string[]} keywordList
+ * @returns {boolean} whether the message matches any keyword in the list.
+ */
 function matchesKeyword(normalizedMessage, keywordList) {
   return keywordList.some((keyword) => {
     const isNumeric = /^\d+$/.test(keyword);
@@ -255,6 +323,7 @@ function matchesKeyword(normalizedMessage, keywordList) {
   });
 }
 
+/** @returns {string|null} the first matching routing key, or null. */
 function getMatchedKey(normalizedMessage) {
   return ROUTING_ORDER.find((key) => matchesKeyword(normalizedMessage, KEYWORDS[key])) || null;
 }
@@ -264,7 +333,7 @@ function getMatchedKey(normalizedMessage) {
 // ---------------------------------------------------------------------------
 
 function validateTwilioRequest(req, res, next) {
-  if (!VALIDATE_TWILIO_SIGNATURE) {
+  if (!config.validateTwilioSignature) {
     return next();
   }
 
@@ -272,15 +341,35 @@ function validateTwilioRequest(req, res, next) {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol;
   const fullUrl = `${protocol}://${req.get('host')}${req.originalUrl}`;
 
-  const isValid = twilio.validateRequest(TWILIO_AUTH_TOKEN, twilioSignature, fullUrl, req.body);
+  const isValid = twilio.validateRequest(config.twilioAuthToken, twilioSignature, fullUrl, req.body);
 
   if (!isValid) {
-    console.warn('⚠️  Rejected request with invalid Twilio signature.');
+    logger.warn(`Rejected request with invalid Twilio signature (from ${req.body && req.body.From}).`);
     return res.status(403).send('Forbidden: invalid Twilio signature.');
   }
 
   return next();
 }
+
+// ---------------------------------------------------------------------------
+// App setup
+// ---------------------------------------------------------------------------
+
+const app = express();
+
+app.disable('x-powered-by');
+
+// Basic security headers on every response.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// Twilio sends incoming webhook data as application/x-www-form-urlencoded.
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 // ---------------------------------------------------------------------------
 // Routes
@@ -296,11 +385,18 @@ app.get('/health', (req, res) => {
 
 app.post('/whatsapp', validateTwilioRequest, (req, res) => {
   try {
-    const incomingBody = req.body && req.body.Body ? req.body.Body : '';
+    const rawBody = req.body && req.body.Body ? req.body.Body : '';
     const from = req.body && req.body.From ? req.body.From : 'unknown';
-    const message = normalizeText(incomingBody);
 
-    console.log(`Incoming message from ${from}: "${incomingBody}"`);
+    if (rawBody.length > config.maxIncomingMessageLength) {
+      logger.warn(`Rejected oversized message (${rawBody.length} chars) from ${from}.`);
+      const twiml = new MessagingResponse();
+      twiml.message(MESSAGES.FALLBACK);
+      return res.type('text/xml').status(200).send(twiml.toString());
+    }
+
+    const message = normalizeText(rawBody);
+    logger.info(`Incoming message from ${from}: "${rawBody}"`);
 
     let replyText;
     const matchedKey = getMatchedKey(message);
@@ -308,54 +404,67 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
     if (matchedKey === 'BOOK') {
       replyText = MESSAGES.BOOK;
 
-      // Pull historical state out of memory before executing alarm log
-      const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package';
-
-      console.log(`\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨`);
-      console.log(`This patient wants to book an appointment for ${lastCheckedTreatment}!`);
-      console.log(`Patient Phone Number: ${from}`);
-      console.log(`Please schedule his appointment immediately!`);
-      console.log(`🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`);
+      const lastCheckedTreatment = getLastTreatment(from);
+      logger.alarm(
+        `Patient ${from} requested a booking for: ${lastCheckedTreatment}. Please schedule immediately.`
+      );
     } else if (matchedKey) {
       replyText = MESSAGES[matchedKey];
 
       // Remember which package/offer this patient last looked at, so a
       // later "book" reply can be logged with useful context.
       if (TREATMENT_LABELS[matchedKey]) {
-        patientSessions[from] = TREATMENT_LABELS[matchedKey];
+        rememberTreatment(from, TREATMENT_LABELS[matchedKey]);
       }
 
-      console.log(`Menu sent to ${from}: ${matchedKey}`);
+      logger.info(`Menu sent to ${from}: ${matchedKey}`);
     } else {
       replyText = MESSAGES.FALLBACK;
-      console.log(`Fallback sent to ${from} (no keyword match for: "${incomingBody}")`);
+      logger.info(`Fallback sent to ${from} (no keyword match for: "${rawBody}").`);
     }
 
     const twiml = new MessagingResponse();
     twiml.message(replyText);
 
-    res.type('text/xml').status(200).send(twiml.toString());
+    return res.type('text/xml').status(200).send(twiml.toString());
   } catch (err) {
-    console.error('Error handling incoming WhatsApp message:', err);
+    logger.error(`Error handling incoming WhatsApp message: ${err && err.stack ? err.stack : err}`);
 
     const twiml = new MessagingResponse();
     twiml.message(MESSAGES.FALLBACK);
 
-    res.type('text/xml').status(200).send(twiml.toString());
+    return res.type('text/xml').status(200).send(twiml.toString());
   }
 });
 
 app.use((req, res) => res.status(404).send('Not found.'));
 
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => res.status(500).send('Internal server error.'));
+app.use((err, req, res, next) => {
+  logger.error(`Unhandled error: ${err && err.stack ? err.stack : err}`);
+  res.status(500).send('Internal server error.');
+});
 
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 
-app.listen(PORT, () => {
-  console.log(`City Gate Medical Center bot live on port ${PORT}`);
+const server = app.listen(config.port, () => {
+  logger.info(`City Gate Medical Center bot live on port ${config.port}`);
 });
+
+// Graceful shutdown so in-flight requests finish and the sweep timer is
+// cleared cleanly (handy on platforms like Render that send SIGTERM).
+function shutdown(signal) {
+  logger.info(`${signal} received, shutting down gracefully...`);
+  clearInterval(sessionSweepTimer);
+  server.close(() => {
+    logger.info('Server closed.');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = app;
