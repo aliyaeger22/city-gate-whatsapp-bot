@@ -253,6 +253,8 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
 
     const replyText = getReplyForMessage(incomingBody);
 
+    console.log(`🤖 AI Automated Response sent to ${from}: \n"${replyText}"\n---------------------------------------`);
+
     const twiml = new MessagingResponse();
     twiml.message(replyText);
 
