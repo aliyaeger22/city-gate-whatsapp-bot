@@ -28,6 +28,35 @@ const VALIDATE_TWILIO_SIGNATURE = process.env.VALIDATE_TWILIO_SIGNATURE === 'tru
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 
 // ---------------------------------------------------------------------------
+// In-memory per-user session state
+// ---------------------------------------------------------------------------
+//
+// Tracks the last package/offer a patient looked at, so that when they
+// reply "BOOK" we can log which treatment the booking request is likely
+// for. This is a simple in-memory map keyed by the WhatsApp "From" number.
+//
+// NOTE: This resets whenever the process restarts, and won't work correctly
+// if you ever run more than one instance of this server (each instance
+// would have its own copy). That's fine for a single small deployment, but
+// if you outgrow that, swap this for a real store (Redis, a DB table, etc).
+
+const patientSessions = {};
+
+// Human-readable labels for logging, keyed by the same message keys used
+// in MESSAGES/KEYWORDS below.
+const TREATMENT_LABELS = {
+  HEALTH_50: 'Complete Health Package (50 AED)',
+  SILVER_49: 'Silver Full-Body Package (49 AED)',
+  GOLD_99: 'Gold Full-Body Package (99 AED)',
+  MEDICAL_LAB_IV: 'Medical, Lab & IV Drip Tiers',
+  DRIP_A: 'IV Drip Tier A (99 AED)',
+  DRIP_B: 'IV Drip Tier B (149 AED)',
+  DRIP_C: 'IV Drip Tier C (199 AED)',
+  DRIP_D: 'IV Drip Tier D (299 AED Premium)',
+  DENTAL: 'Mega Dental Offers (75 AED)',
+};
+
+// ---------------------------------------------------------------------------
 // Message templates (with Silver & Gold packages integrated)
 // ---------------------------------------------------------------------------
 
@@ -201,12 +230,42 @@ function matchesKeyword(normalizedMessage, keywordList) {
   });
 }
 
-function getReplyForMessage(rawBody) {
+function getMatchedKey(normalizedMessage) {
+  return ROUTING_ORDER.find((key) => matchesKeyword(normalizedMessage, KEYWORDS[key])) || null;
+}
+
+/**
+ * Given the sender's WhatsApp number and the matched routing key, decide
+ * what reply to send, updating/logging session state along the way.
+ */
+function getReplyForMessage(rawBody, from) {
   const message = normalizeText(rawBody);
+  const matchedKey = getMatchedKey(message);
 
-  const matchedKey = ROUTING_ORDER.find((key) => matchesKeyword(message, KEYWORDS[key]));
+  if (!matchedKey) {
+    return MESSAGES.FALLBACK;
+  }
 
-  return matchedKey ? MESSAGES[matchedKey] : MESSAGES.FALLBACK;
+  if (matchedKey === 'BOOK') {
+    // Pull historical state out of memory before executing alarm log
+    const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package / Direct Booking Request';
+
+    console.log(`\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨`);
+    console.log(`This patient wants to book an appointment for ${lastCheckedTreatment}!`);
+    console.log(`Patient Phone Number: ${from}`);
+    console.log(`Please schedule his appointment immediately!`);
+    console.log(`🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`);
+
+    return MESSAGES.BOOK;
+  }
+
+  // Remember which package/offer this patient last looked at, so a later
+  // "BOOK" reply can be logged with useful context.
+  if (TREATMENT_LABELS[matchedKey]) {
+    patientSessions[from] = TREATMENT_LABELS[matchedKey];
+  }
+
+  return MESSAGES[matchedKey];
 }
 
 // ---------------------------------------------------------------------------
@@ -251,7 +310,7 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
 
     console.log(`Incoming message from ${from}: "${incomingBody}"`);
 
-    const replyText = getReplyForMessage(incomingBody);
+    const replyText = getReplyForMessage(incomingBody, from);
 
     console.log(`🤖 AI Automated Response sent to ${from}: \n"${replyText}"\n---------------------------------------`);
 
@@ -273,20 +332,6 @@ app.use((req, res) => res.status(404).send('Not found.'));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => res.status(500).send('Internal server error.'));
-
-//-----------------------------------------------------------------------------
- } else if (matchesKeyword(message, KEYWORDS.BOOK)) {
-      replyText = MESSAGES.BOOK;
-
-      // Pull historical state out of memory before executing alarm log
-      const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package / Direct Booking Request';
-
-      console.log(\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨);
-      console.log(This patient wants to book an appointment for ${lastCheckedTreatment}!);
-      console.log(Patient Phone Number: ${from});
-      console.log(Please schedule his appointment immediately!);
-      console.log(🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n);
-    } else {"
 
 // ---------------------------------------------------------------------------
 // Start server
