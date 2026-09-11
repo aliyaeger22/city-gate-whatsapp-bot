@@ -153,6 +153,36 @@ const TREATMENT_LABELS = {
   DENTAL: 'Mega Dental Offers (75 AED)',
 };
 
+// Patterns used to spot a package mention *inside* a longer, free-text
+// message (e.g. "I want to book the gold package"), so a booking request
+// that names the package and asks to book in the same breath still gets
+// logged with the right treatment instead of falling back to
+// "Unspecified Package". Checked in this order (most specific first) so
+// e.g. "premium drip" resolves to DRIP_D rather than the generic
+// MEDICAL_LAB_IV overview. Deliberately excludes single letters/numbers
+// and the bare word "package" — too likely to false-positive inside
+// ordinary sentences.
+const TREATMENT_MENTION_PATTERNS = [
+  ['DRIP_D', /\b(premium\s*(tier|drip)|tier\s*d|nad\+?|cinderella)\b/],
+  ['DRIP_C', /\b(tier\s*c|vitamin\s*d\s*\/?\s*b12)\b/],
+  ['DRIP_B', /\b(tier\s*b|iron\s*drip)\b/],
+  ['DRIP_A', /\b(tier\s*a|hydration\s*drip)\b/],
+  ['MEDICAL_LAB_IV', /\b(iv\s*drips?|drips?)\b/],
+  ['SILVER_49', /\bsilver\b/],
+  ['GOLD_99', /\bgold\b/],
+  ['DENTAL', /\b(dental|teeth|dentist|scaling)\b/],
+];
+
+/**
+ * Looks for a package/treatment mention inside a free-text message.
+ * @param {string} normalizedMessage
+ * @returns {string|null} the matching TREATMENT_LABELS key, or null.
+ */
+function detectMentionedTreatment(normalizedMessage) {
+  const match = TREATMENT_MENTION_PATTERNS.find(([, pattern]) => pattern.test(normalizedMessage));
+  return match ? match[0] : null;
+}
+
 // ---------------------------------------------------------------------------
 // Message templates
 // ---------------------------------------------------------------------------
@@ -467,6 +497,15 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
 
     if (matchedKey === 'BOOK') {
       replyText = MESSAGES.BOOK;
+
+      // If the client named a package in the same message as the booking
+      // request (e.g. "book the gold package"), capture that now so the
+      // alert below doesn't fall back to "Unspecified Package" just
+      // because they never separately browsed the menu first.
+      const mentionedTreatmentKey = detectMentionedTreatment(message);
+      if (mentionedTreatmentKey) {
+        rememberTreatment(from, TREATMENT_LABELS[mentionedTreatmentKey]);
+      }
 
       const lastCheckedTreatment = getLastTreatment(from);
       logger.bookingAlert({
