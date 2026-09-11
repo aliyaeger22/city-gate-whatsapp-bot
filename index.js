@@ -21,6 +21,10 @@
  *   8. "Talk to a human" intent: patients asking for a human/agent are
  *      pointed to the WhatsApp number for the front desk, separate from
  *      the "BOOK" flow.
+ *   9. Dental sub-menu: each dental treatment now has its own letter
+ *      (E–L) so a patient can pick the exact procedure they want,
+ *      instead of only being able to reply "BOOK" against whichever
+ *      treatment was last mentioned.
  */
 
 'use strict';
@@ -150,7 +154,15 @@ const TREATMENT_LABELS = {
   DRIP_B: 'IV Drip Tier B - 149 AED (Pure Gluta / Vitamin C / Iron)',
   DRIP_C: 'IV Drip Tier C - 199 AED (Vitamin D / B12)',
   DRIP_D: 'IV Drip Tier D - 299 AED Premium (Cinderella NAD+ / Energy)',
-  DENTAL: 'Mega Dental Offers (75 AED)',
+  DENTAL: 'Mega Dental Offers (overview)',
+  DENTAL_E: 'Dental: Consultation + Scaling & Polishing (75 AED)',
+  DENTAL_F: 'Dental: Filling (99 AED)',
+  DENTAL_G: 'Dental: Normal Extraction (99 AED)',
+  DENTAL_H: 'Dental: Pediatric Extraction (200 AED)',
+  DENTAL_I: 'Dental: Crown & Bridge Work (250 AED)',
+  DENTAL_J: 'Dental: Surgical Extraction (250 AED)',
+  DENTAL_K: 'Dental: Root Canal (400 AED)',
+  DENTAL_L: 'Dental: Wisdom Extraction (500 AED)',
 };
 
 // Patterns used to spot a package mention *inside* a longer, free-text
@@ -159,9 +171,10 @@ const TREATMENT_LABELS = {
 // logged with the right treatment instead of falling back to
 // "Unspecified Package". Checked in this order (most specific first) so
 // e.g. "premium drip" resolves to DRIP_D rather than the generic
-// MEDICAL_LAB_IV overview. Deliberately excludes single letters/numbers
-// and the bare word "package" — too likely to false-positive inside
-// ordinary sentences.
+// MEDICAL_LAB_IV overview, and "root canal" resolves to DENTAL_K rather
+// than the generic DENTAL overview. Deliberately excludes single letters/
+// numbers and the bare word "package" — too likely to false-positive
+// inside ordinary sentences.
 const TREATMENT_MENTION_PATTERNS = [
   ['DRIP_D', /\b(premium\s*(tier|drip)|tier\s*d|nad\+?|cinderella)\b/],
   ['DRIP_C', /\b(tier\s*c|vitamin\s*d\s*\/?\s*b12)\b/],
@@ -170,7 +183,16 @@ const TREATMENT_MENTION_PATTERNS = [
   ['MEDICAL_LAB_IV', /\b(iv\s*drips?|drips?)\b/],
   ['SILVER_49', /\bsilver\b/],
   ['GOLD_99', /\bgold\b/],
-  ['DENTAL', /\b(dental|teeth|dentist|scaling)\b/],
+  // Dental sub-treatments, checked before the generic DENTAL fallback.
+  ['DENTAL_K', /\broot\s*canal\b/],
+  ['DENTAL_L', /\bwisdom\b/],
+  ['DENTAL_J', /\bsurgical\s*extraction\b/],
+  ['DENTAL_I', /\b(crown|bridge)\b/],
+  ['DENTAL_H', /\bpediatric\s*extraction\b/],
+  ['DENTAL_G', /\b(normal\s*extraction|extraction)\b/],
+  ['DENTAL_F', /\bfilling\b/],
+  ['DENTAL_E', /\b(scaling|polishing|consultation)\b/],
+  ['DENTAL', /\b(dental|teeth|dentist)\b/],
 ];
 
 /**
@@ -279,18 +301,62 @@ const MESSAGES = {
     '• *Energy Drip* — Recharge your body & mind\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
+  // Dental overview now works like the IV drip menu: it lists each
+  // treatment with its own letter, so patients pick the exact procedure
+  // instead of getting dumped straight into a generic "BOOK".
   DENTAL:
     '🦷 *City Gate Mega Dental Offers* 🦷\n' +
-    'Premium specialist cleanings and operations at local Sharjah rates:\n\n' +
-    '• Consultation + Scaling & Polishing: 75 AED\n' +
-    '• Dental Filling: 99 AED\n' +
-    '• Normal Extraction: 99 AED\n' +
-    '• Pediatric Extraction: 200 AED\n' +
-    '• Crown & Bridge Work: 250 AED\n' +
-    '• Surgical Extraction: 250 AED\n' +
-    '• Root Canal: 400 AED\n' +
-    '• Wisdom Extraction: 500 AED\n\n' +
-    "Would you like to reserve a dental chair? Reply *'BOOK'* to send a request, or type *'0'* to return to the main menu.",
+    'Premium specialist cleanings and operations at local Sharjah rates.\n\n' +
+    'Please reply with a letter (E–L) to check details and book:\n\n' +
+    '🔹 [E] Consultation + Scaling & Polishing — 75 AED\n' +
+    '🔹 [F] Dental Filling — 99 AED\n' +
+    '🔹 [G] Normal Extraction — 99 AED\n' +
+    '🔹 [H] Pediatric Extraction — 200 AED\n' +
+    '🔹 [I] Crown & Bridge Work — 250 AED\n' +
+    '🔹 [J] Surgical Extraction — 250 AED\n' +
+    '🔹 [K] Root Canal — 400 AED\n' +
+    '🔹 [L] Wisdom Extraction — 500 AED\n\n' +
+    "Reply '0' to return to the main menu.",
+
+  DENTAL_E:
+    '🔹 *[E] CONSULTATION + SCALING & POLISHING — 75 AED* 🔹\n\n' +
+    'A full dental check-up with professional cleaning to remove plaque and surface stains.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_F:
+    '🔹 *[F] DENTAL FILLING — 99 AED* 🔹\n\n' +
+    'Restores a decayed or damaged tooth back to its normal shape and function.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_G:
+    '🔹 *[G] NORMAL EXTRACTION — 99 AED* 🔹\n\n' +
+    'Straightforward removal of a visible, accessible tooth.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_H:
+    '🔹 *[H] PEDIATRIC EXTRACTION — 200 AED* 🔹\n\n' +
+    'Gentle tooth extraction for children, handled by our pediatric dental team.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_I:
+    '🔹 *[I] CROWN & BRIDGE WORK — 250 AED* 🔹\n\n' +
+    'Restores or replaces damaged and missing teeth for a natural look and bite.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_J:
+    '🔹 *[J] SURGICAL EXTRACTION — 250 AED* 🔹\n\n' +
+    'For teeth that are broken, impacted, or not easily accessible and need a minor surgical procedure.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_K:
+    '🔹 *[K] ROOT CANAL — 400 AED* 🔹\n\n' +
+    'Treats infection inside the tooth to relieve pain and save the natural tooth.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_L:
+    '🔹 *[L] WISDOM EXTRACTION — 500 AED* 🔹\n\n' +
+    'Safe removal of impacted or problematic wisdom teeth.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   LOCATION:
     '📍 *City Gate Medical Center Location & Hours*:\n' +
@@ -331,7 +397,18 @@ const KEYWORDS = {
   DRIP_B: ['b'],
   DRIP_C: ['c'],
   DRIP_D: ['d'],
-  DENTAL: ['4', 'dental', 'teeth', 'dentist', 'scaling'],
+  DENTAL: ['4', 'dental', 'teeth', 'dentist'],
+  // Dental sub-menu, lettered E–L so they don't collide with the A–D
+  // drip-tier letters above. Exact single-letter match only (see
+  // matchesKeyword), so these won't accidentally fire on longer phrases.
+  DENTAL_E: ['e'],
+  DENTAL_F: ['f'],
+  DENTAL_G: ['g'],
+  DENTAL_H: ['h'],
+  DENTAL_I: ['i'],
+  DENTAL_J: ['j'],
+  DENTAL_K: ['k'],
+  DENTAL_L: ['l'],
   LOCATION: ['5', 'location', 'where', 'timing', 'hours'],
   BOOK: ['book', 'reception', 'call', 'talk'],
   // Distinct from BOOK: patients who just want a person, not a booking.
@@ -355,6 +432,14 @@ const ROUTING_ORDER = [
   'DRIP_C',
   'DRIP_D',
   'MEDICAL_LAB_IV',
+  'DENTAL_E',
+  'DENTAL_F',
+  'DENTAL_G',
+  'DENTAL_H',
+  'DENTAL_I',
+  'DENTAL_J',
+  'DENTAL_K',
+  'DENTAL_L',
   'DENTAL',
   'LOCATION',
   'WELCOME',
@@ -499,9 +584,10 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
       replyText = MESSAGES.BOOK;
 
       // If the client named a package in the same message as the booking
-      // request (e.g. "book the gold package"), capture that now so the
-      // alert below doesn't fall back to "Unspecified Package" just
-      // because they never separately browsed the menu first.
+      // request (e.g. "book the gold package" or "book a root canal"),
+      // capture that now so the alert below doesn't fall back to
+      // "Unspecified Package" just because they never separately browsed
+      // the menu first.
       const mentionedTreatmentKey = detectMentionedTreatment(message);
       if (mentionedTreatmentKey) {
         rememberTreatment(from, TREATMENT_LABELS[mentionedTreatmentKey]);
