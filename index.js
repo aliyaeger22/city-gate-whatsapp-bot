@@ -155,14 +155,16 @@ const TREATMENT_LABELS = {
   DRIP_C: 'IV Drip Tier C - 199 AED (Vitamin D / B12)',
   DRIP_D: 'IV Drip Tier D - 299 AED Premium (Cinderella NAD+ / Energy)',
   DENTAL: 'Mega Dental Offers (overview)',
-  DENTAL_E: 'Dental: Consultation + Scaling & Polishing (75 AED)',
-  DENTAL_F: 'Dental: Filling (99 AED)',
-  DENTAL_G: 'Dental: Normal Extraction (99 AED)',
-  DENTAL_H: 'Dental: Pediatric Extraction (200 AED)',
-  DENTAL_I: 'Dental: Crown & Bridge Work (250 AED)',
-  DENTAL_J: 'Dental: Surgical Extraction (250 AED)',
-  DENTAL_K: 'Dental: Root Canal (400 AED)',
-  DENTAL_L: 'Dental: Wisdom Extraction (500 AED)',
+  DENTAL_E: 'Dental: Comprehensive Consultation (Free)',
+  DENTAL_F: 'Dental: Scaling & Polishing (75 AED)',
+  DENTAL_G: 'Dental: Filling (99 AED)',
+  DENTAL_H: 'Dental: Normal Extraction (99 AED)',
+  DENTAL_I: 'Dental: PFM Crown (250 AED)',
+  DENTAL_J: 'Dental: Zirconia Crown (400 AED)',
+  DENTAL_K: 'Dental: Bridge (priced per unit)',
+  DENTAL_L: 'Dental: Surgical Extraction (250 AED)',
+  DENTAL_M: 'Dental: Root Canal Treatment (400 AED)',
+  DENTAL_N: 'Dental: Wisdom Tooth Extraction (500 AED)',
 };
 
 // Patterns used to spot a package mention *inside* a longer, free-text
@@ -184,14 +186,16 @@ const TREATMENT_MENTION_PATTERNS = [
   ['SILVER_49', /\bsilver\b/],
   ['GOLD_99', /\bgold\b/],
   // Dental sub-treatments, checked before the generic DENTAL fallback.
-  ['DENTAL_K', /\broot\s*canal\b/],
-  ['DENTAL_L', /\bwisdom\b/],
-  ['DENTAL_J', /\bsurgical\s*extraction\b/],
-  ['DENTAL_I', /\b(crown|bridge)\b/],
-  ['DENTAL_H', /\bpediatric\s*extraction\b/],
-  ['DENTAL_G', /\b(normal\s*extraction|extraction)\b/],
-  ['DENTAL_F', /\bfilling\b/],
-  ['DENTAL_E', /\b(scaling|polishing|consultation)\b/],
+  ['DENTAL_M', /\broot\s*canal\b/],
+  ['DENTAL_N', /\bwisdom\b/],
+  ['DENTAL_L', /\bsurgical\s*extraction\b/],
+  ['DENTAL_K', /\bbridge\b/],
+  ['DENTAL_J', /\bzirconi?a?\s*crown\b/],
+  ['DENTAL_I', /\b(pfm\s*crown|crown)\b/],
+  ['DENTAL_H', /\b(normal\s*extraction|extraction)\b/],
+  ['DENTAL_G', /\bfilling\b/],
+  ['DENTAL_F', /\b(scaling|polishing)\b/],
+  ['DENTAL_E', /\bconsultation\b/],
   ['DENTAL', /\b(dental|teeth|dentist)\b/],
 ];
 
@@ -307,54 +311,66 @@ const MESSAGES = {
   DENTAL:
     '🦷 *City Gate Mega Dental Offers* 🦷\n' +
     'Premium specialist cleanings and operations at local Sharjah rates.\n\n' +
-    'Please reply with a letter (E–L) to check details and book:\n\n' +
-    '🔹 [E] Consultation + Scaling & Polishing — 75 AED\n' +
-    '🔹 [F] Dental Filling — 99 AED\n' +
-    '🔹 [G] Normal Extraction — 99 AED\n' +
-    '🔹 [H] Pediatric Extraction — 200 AED\n' +
-    '🔹 [I] Crown & Bridge Work — 250 AED\n' +
-    '🔹 [J] Surgical Extraction — 250 AED\n' +
-    '🔹 [K] Root Canal — 400 AED\n' +
-    '🔹 [L] Wisdom Extraction — 500 AED\n\n' +
+    'Please reply with a letter (E–N) to check details and book:\n\n' +
+    '🔹 [E] Comprehensive Consultation — Free\n' +
+    '🔹 [F] Scaling & Polishing — 75 AED\n' +
+    '🔹 [G] Dental Filling — 99 AED\n' +
+    '🔹 [H] Normal Extraction — 99 AED\n' +
+    '🔹 [I] PFM Crown — 250 AED\n' +
+    '🔹 [J] Zirconia Crown — 400 AED\n' +
+    '🔹 [K] Bridge — priced per number of units\n' +
+    '🔹 [L] Surgical Extraction — 250 AED\n' +
+    '🔹 [M] Root Canal Treatment — 400 AED\n' +
+    '🔹 [N] Wisdom Tooth Extraction — 500 AED\n\n' +
     "Reply '0' to return to the main menu.",
 
   DENTAL_E:
-    '🔹 *[E] CONSULTATION + SCALING & POLISHING — 75 AED* 🔹\n\n' +
-    'A full dental check-up with professional cleaning to remove plaque and surface stains.\n\n' +
+    '🔹 *[E] COMPREHENSIVE CONSULTATION — FREE* 🔹\n\n' +
+    'A full dental check-up with our dentist to assess your teeth and recommend next steps — no charge.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_F:
-    '🔹 *[F] DENTAL FILLING — 99 AED* 🔹\n\n' +
-    'Restores a decayed or damaged tooth back to its normal shape and function.\n\n' +
+    '🔹 *[F] SCALING & POLISHING — 75 AED* 🔹\n\n' +
+    'Professional cleaning to remove plaque, tartar, and surface stains.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_G:
-    '🔹 *[G] NORMAL EXTRACTION — 99 AED* 🔹\n\n' +
-    'Straightforward removal of a visible, accessible tooth.\n\n' +
+    '🔹 *[G] DENTAL FILLING — 99 AED* 🔹\n\n' +
+    'Restores a decayed or damaged tooth back to its normal shape and function.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_H:
-    '🔹 *[H] PEDIATRIC EXTRACTION — 200 AED* 🔹\n\n' +
-    'Gentle tooth extraction for children, handled by our pediatric dental team.\n\n' +
+    '🔹 *[H] NORMAL EXTRACTION — 99 AED* 🔹\n\n' +
+    'Straightforward removal of a visible, accessible tooth.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_I:
-    '🔹 *[I] CROWN & BRIDGE WORK — 250 AED* 🔹\n\n' +
-    'Restores or replaces damaged and missing teeth for a natural look and bite.\n\n' +
+    '🔹 *[I] PFM CROWN — 250 AED* 🔹\n\n' +
+    'Porcelain-fused-to-metal crown — a durable, cost-effective way to restore a damaged tooth.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_J:
-    '🔹 *[J] SURGICAL EXTRACTION — 250 AED* 🔹\n\n' +
-    'For teeth that are broken, impacted, or not easily accessible and need a minor surgical procedure.\n\n' +
+    '🔹 *[J] ZIRCONIA CROWN — 400 AED* 🔹\n\n' +
+    'Premium all-ceramic crown with a more natural, tooth-like finish and excellent durability.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   DENTAL_K:
-    '🔹 *[K] ROOT CANAL — 400 AED* 🔹\n\n' +
+    '🔹 *[K] BRIDGE — PRICED PER UNIT* 🔹\n\n' +
+    'Replaces one or more missing teeth by anchoring to neighbouring teeth. Final price depends on the number of units needed — our team will confirm the exact quote after a check-up.\n\n' +
+    "To book a consultation for a quote, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_L:
+    '🔹 *[L] SURGICAL EXTRACTION — 250 AED* 🔹\n\n' +
+    'For teeth that are broken, impacted, or not easily accessible and need a minor surgical procedure.\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DENTAL_M:
+    '🔹 *[M] ROOT CANAL TREATMENT — 400 AED* 🔹\n\n' +
     'Treats infection inside the tooth to relieve pain and save the natural tooth.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
-  DENTAL_L:
-    '🔹 *[L] WISDOM EXTRACTION — 500 AED* 🔹\n\n' +
+  DENTAL_N:
+    '🔹 *[N] WISDOM TOOTH EXTRACTION — 500 AED* 🔹\n\n' +
     'Safe removal of impacted or problematic wisdom teeth.\n\n' +
     "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
@@ -409,6 +425,8 @@ const KEYWORDS = {
   DENTAL_J: ['j'],
   DENTAL_K: ['k'],
   DENTAL_L: ['l'],
+  DENTAL_M: ['m'],
+  DENTAL_N: ['n'],
   LOCATION: ['5', 'location', 'where', 'timing', 'hours'],
   BOOK: ['book', 'reception', 'call', 'talk'],
   // Distinct from BOOK: patients who just want a person, not a booking.
@@ -440,6 +458,8 @@ const ROUTING_ORDER = [
   'DENTAL_J',
   'DENTAL_K',
   'DENTAL_L',
+  'DENTAL_M',
+  'DENTAL_N',
   'DENTAL',
   'LOCATION',
   'WELCOME',
