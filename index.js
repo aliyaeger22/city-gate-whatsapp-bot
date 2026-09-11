@@ -2,8 +2,8 @@
  * City Gate Medical Center - WhatsApp Chatbot Webhook
  *
  * A production-ready Express.js server that handles incoming WhatsApp
- * messages via the Twilio WhatsApp API and routes them using simple,
- * case-insensitive keyword matching.
+ * messages via the Twilio WhatsApp API and replies using TwiML
+ * (MessagingResponse), routed via case-insensitive keyword matching.
  */
 
 'use strict';
@@ -32,32 +32,31 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 // ---------------------------------------------------------------------------
 //
 // Tracks the last package/offer a patient looked at, so that when they
-// reply "BOOK" we can log which treatment the booking request is likely
-// for. This is a simple in-memory map keyed by the WhatsApp "From" number.
+// reply "book" we can log which treatment the booking request is likely
+// for. Keyed by the WhatsApp "From" number.
 //
-// NOTE: This resets whenever the process restarts, and won't work correctly
-// if you ever run more than one instance of this server (each instance
-// would have its own copy). That's fine for a single small deployment, but
-// if you outgrow that, swap this for a real store (Redis, a DB table, etc).
+// NOTE: resets on process restart, and won't stay in sync across multiple
+// server instances. Fine for a single small deployment — swap for Redis
+// or a DB table if you ever scale horizontally.
 
 const patientSessions = {};
 
-// Human-readable labels for logging, keyed by the same message keys used
-// in MESSAGES/KEYWORDS below.
+// Human-readable labels for logging/session purposes, keyed by the same
+// routing keys used in MESSAGES/KEYWORDS below.
 const TREATMENT_LABELS = {
   HEALTH_50: 'Complete Health Package (50 AED)',
   SILVER_49: 'Silver Full-Body Package (49 AED)',
   GOLD_99: 'Gold Full-Body Package (99 AED)',
-  MEDICAL_LAB_IV: 'Medical, Lab & IV Drip Tiers',
-  DRIP_A: 'IV Drip Tier A (99 AED)',
-  DRIP_B: 'IV Drip Tier B (149 AED)',
-  DRIP_C: 'IV Drip Tier C (199 AED)',
-  DRIP_D: 'IV Drip Tier D (299 AED Premium)',
+  MEDICAL_LAB_IV: 'Medical, Lab & IV Drip Tiers (overview)',
+  DRIP_A: 'IV Drip Tier A - 99 AED (Hydration / Whitening / Melasma)',
+  DRIP_B: 'IV Drip Tier B - 149 AED (Pure Gluta / Vitamin C / Iron)',
+  DRIP_C: 'IV Drip Tier C - 199 AED (Vitamin D / B12)',
+  DRIP_D: 'IV Drip Tier D - 299 AED Premium (Cinderella NAD+ / Energy)',
   DENTAL: 'Mega Dental Offers (75 AED)',
 };
 
 // ---------------------------------------------------------------------------
-// Message templates (with Silver & Gold packages integrated)
+// Message templates
 // ---------------------------------------------------------------------------
 
 const MESSAGES = {
@@ -73,7 +72,8 @@ const MESSAGES = {
 
   HEALTH_50:
     '📋 *Complete Health Package (50 AED)*\n' +
-    'Our standard preventive package including 50 essential tests across metabolic tracking, sugar evaluation, and vitamin monitoring.\n\n' +
+    'Our essential preventive panel tracking key baseline biometrics — metabolic tracking, sugar evaluation, and vitamin monitoring.\n\n' +
+    '💡 *SPECIAL ADD-ON:* Add a Vitamin D Test to this package for only 20 AED extra!\n\n' +
     "To schedule your booking, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   SILVER_49:
@@ -92,6 +92,7 @@ const MESSAGES = {
     '• LDL\n\n' +
     '🩺 *GENERAL HEALTH*\n' +
     '• CBC (Complete Blood Count)\n\n' +
+    '💡 *SPECIAL ADD-ON:* Add a Vitamin D Test to this package for only 20 AED extra!\n\n' +
     "To book your Silver Package, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   GOLD_99:
@@ -111,50 +112,74 @@ const MESSAGES = {
     '• Ggt | Total Protein\n\n' +
     '🦋 *THYROID*\n' +
     '• T3 | T4 | TSH\n\n' +
-    '📊 *LIPID PROFILE*\n' +
+    '📊 *LIPID PROFILE (Comprehensive Cholesterol)*\n' +
     '• Total Cholesterol | Triglycerides | Hdl\n' +
     '• Ldl | Vldl | Non-Hdl Cholesterol\n' +
     '• Ldl Hdl Ratio\n\n' +
     '🦴 *BONES*\n' +
-    '• Vitamin D\n\n' +
+    '• Vitamin D (Included!)\n\n' +
+    '🩺 *GENERAL HEALTH*\n' +
+    '• CBC (Complete Blood Count)\n\n' +
     "To book your Gold Package, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   MEDICAL_LAB_IV:
     '💧 IV DRIPS TIER MENU 💧\n' +
     'Feel better, look brighter, live stronger!\n\n' +
     'Please reply with a letter (A, B, C, or D) to check details:\n\n' +
-    '🔹 [A] 99 AED Tier Drips\n' +
+    '🔹 [A] ── 99 AED Tier Drips\n' +
     '• Hydration, Whitening, or Melasma Drip\n\n' +
-    '🔹 [B] 149 AED Tier Drips\n' +
+    '🔹 [B] ── 149 AED Tier Drips\n' +
     '• Pure Gluta, Vitamin C, or Iron Drip\n\n' +
-    '🔹 [C] 199 AED Tier Drip\n' +
+    '🔹 [C] ── 199 AED Tier Drip\n' +
     '• Vitamin D / B12 Drip\n\n' +
-    '🔹 [D] 299 AED Premium Tier Drips\n' +
+    '🔹 [D] ── 299 AED Premium Tier Drips\n' +
     '• Cinderella w/ NAD+ or Energy Drip\n\n' +
     '📌 Starting Offer 99 AED! Buy Now, Pay Later available via Tamara & Tabby.\n\n' +
     "Reply '0' to return to the main menu.",
 
+  DRIP_A:
+    '🔹 *[A] 99 AED TIER DRIPS* 🔹\n\n' +
+    '• *Hydration Drip* — Deep hydration\n' +
+    '• *Whitening Drip* — Brighten skin naturally\n' +
+    '• *Melasma Drip* — Helps reduce pigmentation\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DRIP_B:
+    '🔹 *[B] 149 AED TIER DRIPS* 🔹\n\n' +
+    '• *Pure Gluta* — Powerful skin brightening\n' +
+    '• *Vitamin C* — Boosts immunity & glow\n' +
+    '• *Iron Drip* — Fights fatigue & boosts energy\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DRIP_C:
+    '🔹 *[C] 199 AED TIER DRIP* 🔹\n\n' +
+    '• *Vitamin D / B12* — Stronger bones & more energy\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
+  DRIP_D:
+    '🔹 *[D] 299 AED PREMIUM TIER DRIPS* 🔹\n\n' +
+    '• *Cinderella w/ NAD+* — Ultimate glow & anti-aging\n' +
+    '• *Energy Drip* — Recharge your body & mind\n\n' +
+    "To book, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+
   DENTAL:
     '🦷 *City Gate Mega Dental Offers* 🦷\n' +
     'Premium specialist cleanings and operations at local Sharjah rates:\n\n' +
-    '• Comprehensive Consultation: Free\n' +
-    '• Scaling & Polishing: 75 AED\n' +
+    '• Consultation + Scaling & Polishing: 75 AED\n' +
     '• Dental Filling: 99 AED\n' +
     '• Normal Extraction: 99 AED\n' +
-    '• PFM Crown: 250 AED\n' +
-    '• Zirconia Crown: 400 AED\n' +
-    '• Bridge: According to number of units\n' +
+    '• Crown & Bridge Work: 250 AED\n' +
     '• Surgical Extraction: 250 AED\n' +
-    '• Root Canal Treatment: 400 AED\n' +
-    '• Wisdom Tooth Extraction: 500 AED\n\n' +
+    '• Root Canal: 400 AED\n' +
+    '• Wisdom Extraction: 500 AED\n\n' +
     "Would you like to reserve a dental chair? Reply *'BOOK'* to send a request, or type *'0'* to return to the main menu.",
 
   LOCATION:
     '📍 *City Gate Medical Center Location & Hours*:\n' +
-    'Building 575, Muwaileh Commercial, Sharjah (Behind Sheikh Mohammed Bin Zayed Road).\n\n' +
+    'Building 575, Muwaileh Commercial, Sharjah.\n\n' +
     '⏰ *Timings:* Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM.\n' +
     '🕌 *Fridays:* 3:00 PM – 11:30 PM.\n' +
-    '📍 Google Maps Direction Link: https://maps.google.com/?q=City+Gate+Medical+Center\n\n' +
+    '📍 Map Link: https://google.com\n\n' +
     "Reply *'0'* to return to the menu.",
 
   BOOK: 'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
@@ -172,17 +197,17 @@ const MESSAGES = {
 
 const KEYWORDS = {
   WELCOME: ['hi', 'hello', 'hey', 'menu', 'start', 'deals', 'offers', '0'],
-  HEALTH_50: ['1', 'health', 'screening', '50 aed'],
-  SILVER_49: ['2', 'silver', '49', '49 aed'],
-  GOLD_99: ['3', 'gold', '99', '99 aed'],
-  MEDICAL_LAB_IV: ['4', 'lab', 'package', 'packages', 'blood', 'test', 'tests', 'wellness', 'iv', 'drip', 'drips'],
+  HEALTH_50: ['1', 'health', 'screening'],
+  SILVER_49: ['2', 'silver', '49'],
+  GOLD_99: ['3', 'gold', '99'],
+  MEDICAL_LAB_IV: ['4', 'lab', 'package', 'iv', 'drip', 'drips'],
   DRIP_A: ['a'],
   DRIP_B: ['b'],
   DRIP_C: ['c'],
-  DRIP_D: ['d', 'nad'],
-  DENTAL: ['5', 'dental', 'teeth', 'dentist', 'tooth', 'scaling'],
-  LOCATION: ['6', 'location', 'where', 'timing', 'timings', 'hours'],
-  BOOK: ['book', 'reception', 'call', 'talk', 'agent'],
+  DRIP_D: ['d'],
+  DENTAL: ['5', 'dental', 'teeth', 'dentist', 'scaling'],
+  LOCATION: ['6', 'location', 'where', 'timing', 'hours'],
+  BOOK: ['book', 'reception', 'call', 'talk'],
 };
 
 // Order in which keyword groups are checked. Kept as a single ordered list
@@ -234,40 +259,6 @@ function getMatchedKey(normalizedMessage) {
   return ROUTING_ORDER.find((key) => matchesKeyword(normalizedMessage, KEYWORDS[key])) || null;
 }
 
-/**
- * Given the sender's WhatsApp number and the matched routing key, decide
- * what reply to send, updating/logging session state along the way.
- */
-function getReplyForMessage(rawBody, from) {
-  const message = normalizeText(rawBody);
-  const matchedKey = getMatchedKey(message);
-
-  if (!matchedKey) {
-    return MESSAGES.FALLBACK;
-  }
-
-  if (matchedKey === 'BOOK') {
-    // Pull historical state out of memory before executing alarm log
-    const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package / Direct Booking Request';
-
-    console.log(`\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨`);
-    console.log(`This patient wants to book an appointment for ${lastCheckedTreatment}!`);
-    console.log(`Patient Phone Number: ${from}`);
-    console.log(`Please schedule the patient appointment immediately!`);
-    console.log(`🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`);
-
-    return MESSAGES.BOOK;
-  }
-
-  // Remember which package/offer this patient last looked at, so a later
-  // "BOOK" reply can be logged with useful context.
-  if (TREATMENT_LABELS[matchedKey]) {
-    patientSessions[from] = TREATMENT_LABELS[matchedKey];
-  }
-
-  return MESSAGES[matchedKey];
-}
-
 // ---------------------------------------------------------------------------
 // Twilio request signature validation
 // ---------------------------------------------------------------------------
@@ -307,12 +298,38 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
   try {
     const incomingBody = req.body && req.body.Body ? req.body.Body : '';
     const from = req.body && req.body.From ? req.body.From : 'unknown';
+    const message = normalizeText(incomingBody);
 
     console.log(`Incoming message from ${from}: "${incomingBody}"`);
 
-    const replyText = getReplyForMessage(incomingBody, from);
+    let replyText;
+    const matchedKey = getMatchedKey(message);
 
-    console.log(`🤖 AI Automated Response sent to ${from}: \n"${replyText}"\n---------------------------------------`);
+    if (matchedKey === 'BOOK') {
+      replyText = MESSAGES.BOOK;
+
+      // Pull historical state out of memory before executing alarm log
+      const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package';
+
+      console.log(`\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨`);
+      console.log(`This patient wants to book an appointment for ${lastCheckedTreatment}!`);
+      console.log(`Patient Phone Number: ${from}`);
+      console.log(`Please schedule his appointment immediately!`);
+      console.log(`🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`);
+    } else if (matchedKey) {
+      replyText = MESSAGES[matchedKey];
+
+      // Remember which package/offer this patient last looked at, so a
+      // later "book" reply can be logged with useful context.
+      if (TREATMENT_LABELS[matchedKey]) {
+        patientSessions[from] = TREATMENT_LABELS[matchedKey];
+      }
+
+      console.log(`Menu sent to ${from}: ${matchedKey}`);
+    } else {
+      replyText = MESSAGES.FALLBACK;
+      console.log(`Fallback sent to ${from} (no keyword match for: "${incomingBody}")`);
+    }
 
     const twiml = new MessagingResponse();
     twiml.message(replyText);
