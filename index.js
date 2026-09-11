@@ -106,7 +106,6 @@ sessionSweepTimer.unref(); // don't keep the process alive just for this timer
 // Human-readable labels for logging/session purposes, keyed by the same
 // routing keys used in MESSAGES / KEYWORDS below.
 const TREATMENT_LABELS = {
-  HEALTH_50: 'Complete Health Package (50 AED)',
   SILVER_49: 'Silver Full-Body Package (49 AED)',
   GOLD_99: 'Gold Full-Body Package (99 AED)',
   MEDICAL_LAB_IV: 'Medical, Lab & IV Drip Tiers (overview)',
@@ -125,18 +124,11 @@ const MESSAGES = {
   WELCOME:
     'Welcome to *City Gate Medical Center, Sharjah*! 🏥\n\n' +
     'How can we help you today? Please reply with a number or keyword:\n\n' +
-    '1️⃣ Complete Health Package (50 AED)\n' +
-    '2️⃣ Silver Full-Body Package (49 AED) 🥈\n' +
-    '3️⃣ Gold Full-Body Package (99 AED) 🥇\n' +
-    '4️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
-    '5️⃣ Mega Dental Offers (75 AED)\n' +
-    '6️⃣ Clinic Location & Timings',
-
-  HEALTH_50:
-    '📋 *Complete Health Package (50 AED)*\n' +
-    'Our essential preventive panel tracking key baseline biometrics — metabolic tracking, sugar evaluation, and vitamin monitoring.\n\n' +
-    '💡 *SPECIAL ADD-ON:* Add a Vitamin D Test to this package for only 20 AED extra!\n\n' +
-    "To schedule your booking, reply *'BOOK'*, or type *'0'* to return to the main menu.",
+    '1️⃣ Silver Full-Body Package (49 AED) 🥈\n' +
+    '2️⃣ Gold Full-Body Package (99 AED) 🥇\n' +
+    '3️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
+    '4️⃣ Mega Dental Offers (75 AED)\n' +
+    '5️⃣ Clinic Location & Timings',
 
   SILVER_49:
     '🥈 *SILVER FULL-BODY PACKAGE (49 AED)* 🥈\n' +
@@ -225,6 +217,7 @@ const MESSAGES = {
     '• Consultation + Scaling & Polishing: 75 AED\n' +
     '• Dental Filling: 99 AED\n' +
     '• Normal Extraction: 99 AED\n' +
+    '• Pediatric Extraction: 200 AED\n' +
     '• Crown & Bridge Work: 250 AED\n' +
     '• Surgical Extraction: 250 AED\n' +
     '• Root Canal: 400 AED\n' +
@@ -254,16 +247,15 @@ const MESSAGES = {
 
 const KEYWORDS = {
   WELCOME: ['hi', 'hello', 'hey', 'menu', 'start', 'deals', 'offers', '0'],
-  HEALTH_50: ['1', 'health', 'screening'],
-  SILVER_49: ['2', 'silver', '49'],
-  GOLD_99: ['3', 'gold', '99'],
-  MEDICAL_LAB_IV: ['4', 'lab', 'package', 'iv', 'drip', 'drips'],
+  SILVER_49: ['1', 'silver', '49'],
+  GOLD_99: ['2', 'gold', '99'],
+  MEDICAL_LAB_IV: ['3', 'lab', 'package', 'iv', 'drip', 'drips'],
   DRIP_A: ['a'],
   DRIP_B: ['b'],
   DRIP_C: ['c'],
   DRIP_D: ['d'],
-  DENTAL: ['5', 'dental', 'teeth', 'dentist', 'scaling'],
-  LOCATION: ['6', 'location', 'where', 'timing', 'hours'],
+  DENTAL: ['4', 'dental', 'teeth', 'dentist', 'scaling'],
+  LOCATION: ['5', 'location', 'where', 'timing', 'hours'],
   BOOK: ['book', 'reception', 'call', 'talk'],
 };
 
@@ -272,7 +264,6 @@ const KEYWORDS = {
 // and easy to re-order without touching the matching logic.
 const ROUTING_ORDER = [
   'BOOK',
-  'HEALTH_50',
   'SILVER_49',
   'GOLD_99',
   'DRIP_A',
