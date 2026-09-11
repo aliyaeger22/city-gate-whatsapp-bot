@@ -253,7 +253,7 @@ function getReplyForMessage(rawBody, from) {
     console.log(`\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨`);
     console.log(`This patient wants to book an appointment for ${lastCheckedTreatment}!`);
     console.log(`Patient Phone Number: ${from}`);
-    console.log(`Please schedule his appointment immediately!`);
+    console.log(`Please schedule the patient appointment immediately!`);
     console.log(`🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n`);
 
     return MESSAGES.BOOK;
