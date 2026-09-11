@@ -236,7 +236,7 @@ const MESSAGES = {
     'Building 575, Muwaileh Commercial, Sharjah.\n\n' +
     '⏰ *Timings:* Daily 9:00 AM – 1:30 PM & 3:00 PM – 11:00 PM.\n' +
     '🕌 *Fridays:* 3:00 PM – 11:30 PM.\n' +
-    '📍 Map Link: https://share.google/nWOfQcDZQaptlwxbB\n\n' +
+    '📍 Map Link: https://maps.app.goo.gl/F88HYUCj3UJbginh6\n\n' +
     "Reply *'0'* to return to the menu.",
 
   BOOK: 'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
