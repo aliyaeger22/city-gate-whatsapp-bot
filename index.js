@@ -18,6 +18,9 @@
  *   6. Clear separation of config / content / routing / server concerns
  *      within the file, with JSDoc on every exported helper.
  *   7. Basic security response headers on every route.
+ *   8. "Talk to a human" intent: patients asking for a human/agent are
+ *      pointed to the WhatsApp number for the front desk, separate from
+ *      the "BOOK" flow.
  */
 
 'use strict';
@@ -38,6 +41,12 @@ const config = {
   maxIncomingMessageLength: 500,
   sessionTtlMs: 24 * 60 * 60 * 1000, // 24h
   sessionSweepIntervalMs: 60 * 60 * 1000, // 1h
+  // Front-desk phone number, used both for phone calls (FALLBACK message)
+  // and as the WhatsApp number patients are told to message directly when
+  // they ask for a human.
+  frontDeskPhone: '+971 55 948 4795',
+  // wa.me deep link needs digits only (no "+", spaces, or leading zeros).
+  frontDeskWhatsapp: '971559484795',
 };
 
 if (config.validateTwilioSignature && !config.twilioAuthToken) {
@@ -128,7 +137,8 @@ const MESSAGES = {
     '2️⃣ Gold Full-Body Package (99 AED) 🥇\n' +
     '3️⃣ Medical, Lab & IV Drip Tiers ⭐\n' +
     '4️⃣ Mega Dental Offers (75 AED)\n' +
-    '5️⃣ Clinic Location & Timings',
+    '5️⃣ Clinic Location & Timings\n' +
+    '6️⃣ Talk to a Human 🙋',
 
   SILVER_49:
     '🥈 *SILVER FULL-BODY PACKAGE (49 AED)* 🥈\n' +
@@ -234,10 +244,19 @@ const MESSAGES = {
 
   BOOK: 'Connecting you to our front desk supervisor right now... Please hold on one moment! 📲',
 
+  // Sent when a patient explicitly asks to speak with a real person
+  // (e.g. "human", "agent", "representative", "real person"). Gives them
+  // the WhatsApp number to message directly, plus a tap-to-chat link.
+  HUMAN: (whatsappNumberDisplay, whatsappLink) =>
+    '🙋 *Talk to a Human*\n\n' +
+    `No problem! You can message/WhatsApp our front desk team directly at *${whatsappNumberDisplay}*.\n\n` +
+    `Tap to chat: ${whatsappLink}\n\n` +
+    "Reply *'0'* to return to the main menu in the meantime.",
+
   FALLBACK:
     '🤖 *City Gate Automated Assistant*\n\n' +
-    'For custom treatment questions, urgent file updates, or to speak directly with our clinical reception staff, please call our front desk phone team directly right now!\n\n' +
-    '📞 *Call Us Instantly:* +971 55 948 4795\n\n' +
+    'For custom treatment questions, urgent file updates, or to speak directly with our clinical reception staff, please call or WhatsApp our front desk phone team directly right now!\n\n' +
+    '📞 *Call or WhatsApp:* +971 55 948 4795\n\n' +
     'We are ready to assist you immediately over the phone!',
 };
 
@@ -257,12 +276,19 @@ const KEYWORDS = {
   DENTAL: ['4', 'dental', 'teeth', 'dentist', 'scaling'],
   LOCATION: ['5', 'location', 'where', 'timing', 'hours'],
   BOOK: ['book', 'reception', 'call', 'talk'],
+  // Distinct from BOOK: patients who just want a person, not a booking.
+  HUMAN: ['6', 'human', 'agent', 'representative', 'real person', 'person', 'staff', 'whatsapp'],
 };
 
 // Order in which keyword groups are checked. Kept as a single ordered list
 // (rather than a long if/else chain) so the routing priority is explicit
 // and easy to re-order without touching the matching logic.
+// HUMAN is checked before BOOK because 'book' is in BOOK's keyword list
+// and 'talk' used to be too — 'talk' now only routes to a human, not the
+// booking flow, since "talk to reception" and "book an appointment" are
+// different intents.
 const ROUTING_ORDER = [
+  'HUMAN',
   'BOOK',
   'SILVER_49',
   'GOLD_99',
@@ -317,6 +343,14 @@ function matchesKeyword(normalizedMessage, keywordList) {
 /** @returns {string|null} the first matching routing key, or null. */
 function getMatchedKey(normalizedMessage) {
   return ROUTING_ORDER.find((key) => matchesKeyword(normalizedMessage, KEYWORDS[key])) || null;
+}
+
+/**
+ * Builds a wa.me "tap to chat" link for the front desk WhatsApp number.
+ * @returns {string}
+ */
+function buildFrontDeskWhatsappLink() {
+  return `https://wa.me/${config.frontDeskWhatsapp}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +433,9 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
       logger.alarm(
         `Patient ${from} requested a booking for: ${lastCheckedTreatment}. Please schedule immediately.`
       );
+    } else if (matchedKey === 'HUMAN') {
+      replyText = MESSAGES.HUMAN(config.frontDeskPhone, buildFrontDeskWhatsappLink());
+      logger.info(`Patient ${from} asked for a human — sent WhatsApp/front-desk contact.`);
     } else if (matchedKey) {
       replyText = MESSAGES[matchedKey];
 
