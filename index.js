@@ -91,7 +91,7 @@ const MESSAGES = {
     "To book your Gold Package, reply *'BOOK'*, or type *'0'* to return to the main menu.",
 
   MEDICAL_LAB_IV:
-     '💧 IV DRIPS TIER MENU 💧\n' +
+    '💧 IV DRIPS TIER MENU 💧\n' +
     'Feel better, look brighter, live stronger!\n\n' +
     'Please reply with a letter (A, B, C, or D) to check details:\n\n' +
     '🔹 [A] 99 AED Tier Drips\n' +
@@ -108,13 +108,16 @@ const MESSAGES = {
   DENTAL:
     '🦷 *City Gate Mega Dental Offers* 🦷\n' +
     'Premium specialist cleanings and operations at local Sharjah rates:\n\n' +
-    '• Comprehensive Consultation + Scaling & Polishing: 75 AED\n' +
+    '• Comprehensive Consultation: Free\n' +
+    '• Scaling & Polishing: 75 AED\n' +
     '• Dental Filling: 99 AED\n' +
     '• Normal Extraction: 99 AED\n' +
-    '• Crown & Bridge Work: 250 AED\n' +
+    '• PFM Crown: 250 AED\n' +
+    '• Zirconia Crown: 400 AED\n' +
+    '• Bridge: According to number of units\n' +
     '• Surgical Extraction: 250 AED\n' +
-    '• Specialized Root Canal Treatment: 400 AED\n' +
-    '• Impacted Wisdom Tooth Extraction: 500 AED\n\n' +
+    '• Root Canal Treatment: 400 AED\n' +
+    '• Wisdom Tooth Extraction: 500 AED\n\n' +
     "Would you like to reserve a dental chair? Reply *'BOOK'* to send a request, or type *'0'* to return to the main menu.",
 
   LOCATION:
