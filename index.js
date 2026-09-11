@@ -69,6 +69,34 @@ const logger = {
   warn: (msg) => console.warn(`[${new Date().toISOString()}] WARN  ${msg}`),
   error: (msg) => console.error(`[${new Date().toISOString()}] ERROR ${msg}`),
   alarm: (msg) => console.log(`[${new Date().toISOString()}] 🚨 BOOKING ${msg}`),
+  /**
+   * Prints a visually boxed booking alert to the console so front-desk
+   * staff watching the Render log screen can spot a new booking and grab
+   * the patient's number at a glance, without hunting through a single
+   * dense log line.
+   */
+  bookingAlert: ({ number, treatment }) => {
+    const lines = [
+      '🚨🚨🚨 NEW BOOKING REQUEST 🚨🚨🚨',
+      `📱 NUMBER:    ${number}`,
+      `💊 TREATMENT: ${treatment}`,
+      `🕒 TIME:      ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dubai' })}`,
+    ];
+    const width = Math.max(...lines.map((l) => l.length)) + 4;
+    const border = '='.repeat(width);
+
+    // Blank lines around the box make it easy to spot while scrolling a
+    // live log stream; padEnd keeps the box edges aligned.
+    console.log(
+      '\n' +
+        border +
+        '\n' +
+        lines.map((l) => l.padEnd(width)).join('\n') +
+        '\n' +
+        border +
+        '\n'
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -353,6 +381,17 @@ function buildFrontDeskWhatsappLink() {
   return `https://wa.me/${config.frontDeskWhatsapp}`;
 }
 
+/**
+ * Twilio's "From" field arrives as e.g. "whatsapp:+971501234567". Strips
+ * the "whatsapp:" prefix so the front desk sees a clean, tap-to-dial-style
+ * number in the logs instead of a raw Twilio identifier.
+ * @param {string} from
+ * @returns {string}
+ */
+function formatPatientNumber(from) {
+  return String(from || 'unknown').replace(/^whatsapp:/i, '');
+}
+
 // ---------------------------------------------------------------------------
 // Twilio request signature validation
 // ---------------------------------------------------------------------------
@@ -430,9 +469,10 @@ app.post('/whatsapp', validateTwilioRequest, (req, res) => {
       replyText = MESSAGES.BOOK;
 
       const lastCheckedTreatment = getLastTreatment(from);
-      logger.alarm(
-        `Patient ${from} requested a booking for: ${lastCheckedTreatment}. Please schedule immediately.`
-      );
+      logger.bookingAlert({
+        number: formatPatientNumber(from),
+        treatment: lastCheckedTreatment,
+      });
     } else if (matchedKey === 'HUMAN') {
       replyText = MESSAGES.HUMAN(config.frontDeskPhone, buildFrontDeskWhatsappLink());
       logger.info(`Patient ${from} asked for a human — sent WhatsApp/front-desk contact.`);
