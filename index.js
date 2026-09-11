@@ -274,6 +274,20 @@ app.use((req, res) => res.status(404).send('Not found.'));
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => res.status(500).send('Internal server error.'));
 
+//-----------------------------------------------------------------------------
+ } else if (matchesKeyword(message, KEYWORDS.BOOK)) {
+      replyText = MESSAGES.BOOK;
+
+      // Pull historical state out of memory before executing alarm log
+      const lastCheckedTreatment = patientSessions[from] || 'Unspecified Package / Direct Booking Request';
+
+      console.log(\n🚨🚨🚨 ALARM: BOOKING REQUEST RECEIVED 🚨🚨🚨);
+      console.log(This patient wants to book an appointment for ${lastCheckedTreatment}!);
+      console.log(Patient Phone Number: ${from});
+      console.log(Please schedule his appointment immediately!);
+      console.log(🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨\n);
+    } else {"
+
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
